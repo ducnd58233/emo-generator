@@ -1,31 +1,58 @@
-[project]
+[tool.poetry]
 name = "ai"
 version = "0.1.0"
 description = ""
-authors = [
-    {name = "ducnd58233",email = "only4wns@gmail.com"}
-]
+authors = ["ducnd58233 <only4wns@gmail.com>"]
 readme = "README.md"
-requires-python = ">=3.11"
-dependencies = [
-    "torch (>=2.7.1,<3.0.0)",
-    "torchvision (>=0.22.1,<0.23.0)",
-    "gdown (>=5.2.0,<6.0.0)",
-    "pandas (>=2.3.1,<3.0.0)",
-    "transformers (>=4.53.3,<5.0.0)",
-    "diffusers (>=0.34.0,<0.35.0)",
-    "huggingface-hub (>=0.33.4,<0.34.0)",
-    "python-dotenv (>=1.1.1,<2.0.0)",
-    "mlflow (>=3.1.3,<4.0.0)",
-]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+gdown = "^5.2"
+pandas = "^2.3"
+transformers = "^4.53"
+diffusers = "^0.34"
+huggingface-hub = "^0.33"
+python-dotenv = "^1.1"
+mlflow = "^3.1"
+accelerate = "^0.27"
+
+# ===========================================
+# =========== START OF TORCH PART ===========
+torch = { version = "^2.7", source = "pytorch-cpu", markers = "extra=='cpu' and extra!='cuda'" }
+torchvision = { version = "^0.22", source = "pytorch-cpu", markers = "extra=='cpu' and extra!='cuda'" }
+# ============ END OF TORCH PART ============
+# ===========================================
+
+[tool.poetry.group.cuda]
+optional = true
+
+# https://github.com/pytorch/pytorch/blob/main/RELEASE.md#release-compatibility-matrix
+[tool.poetry.group.cuda.dependencies]
+torch = { version = "^2.7", source = "pytorch-cuda", markers = "extra=='cuda' and extra!='cpu'" }
+torchvision = { version = "^0.22", source = "pytorch-cuda", markers = "extra=='cuda' and extra!='cpu'" }
 
 [tool.poetry.group.dev.dependencies]
-pre-commit = "^4.2.0"
-pre-commit-hooks = "^5.0.0"
-black = "^25.1.0"
-isort = "^6.0.1"
-autoflake = "^2.3.1"
+pre-commit = "^4.2"
+pre-commit-hooks = "^5.0"
+black = "^25.1"
+isort = "^6.0"
+autoflake = "^2.3"
+
+[tool.poetry.extras]
+cpu = ["torch", "torchvision"]
+cuda = ["torch", "torchvision"]
+
+[[tool.poetry.source]]
+name = "pytorch-cuda"
+priority = "explicit"
+url = "https://download.pytorch.org/whl/cu128"
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+priority = "explicit"
+url = "https://download.pytorch.org/whl/cpu"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
