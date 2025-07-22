@@ -1,11 +1,11 @@
+from typing import List, Tuple
+
 import torch
 from PIL import Image
-from typing import List, Tuple
 
 
 def postprocess_images(
-    images: torch.Tensor,
-    target_size: Tuple[int, int] = (512, 512)
+    images: torch.Tensor, target_size: Tuple[int, int] = (512, 512)
 ) -> List[Image.Image]:
     """Post-process generated images"""
 
@@ -19,13 +19,14 @@ def postprocess_images(
 
     # Resize if needed
     if target_size != (images.shape[2], images.shape[1]):
-        pil_images = [img.resize(target_size, Image.LANCZOS)
-                      for img in pil_images]
+        pil_images = [img.resize(target_size, Image.LANCZOS) for img in pil_images]
 
     return pil_images
 
 
-def apply_filters(image: Image.Image, brightness: float = 1.0, contrast: float = 1.0) -> Image.Image:
+def apply_filters(
+    image: Image.Image, brightness: float = 1.0, contrast: float = 1.0
+) -> Image.Image:
     """Apply brightness and contrast adjustments"""
     from PIL import ImageEnhance
 

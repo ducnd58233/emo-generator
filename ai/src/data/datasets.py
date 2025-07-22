@@ -1,8 +1,9 @@
 import os
-import torch
-import pandas as pd
-from PIL import Image
 from typing import Callable, List, Optional, Tuple
+
+import pandas as pd
+import torch
+from PIL import Image
 from torch.utils.data import Dataset
 
 
@@ -17,10 +18,10 @@ class EmojiDataset(Dataset):
             csv_file = os.path.join(data_dir, "metadata.csv")
             image_folder = os.path.join(data_dir, "images")
             df = pd.read_csv(csv_file)
-            df["image_path"] = df["file_name"].astype(
-                str).str.replace("\\", "/")
+            df["image_path"] = df["file_name"].astype(str).str.replace("\\", "/")
             df["full_image_path"] = df["image_path"].apply(
-                lambda x: os.path.join(image_folder, x))
+                lambda x: os.path.join(image_folder, x)
+            )
             dataframes.append(df)
         self.dataframe = pd.concat(dataframes, ignore_index=True)
         self.transform = transform

@@ -1,13 +1,14 @@
-import torch
-import numpy as np
-from tqdm import tqdm
-from typing import Optional, List, Union
-from PIL import Image
+from typing import List, Optional
 
-from ..models.stable_diffusion.diffusion import StableDiffusion
-from ..models.stable_diffusion.scheduler import DDPMScheduler
+import numpy as np
+import torch
+from PIL import Image
+from tqdm import tqdm
+
 from ..models.encoders.clip import CLIPTextEncoder
 from ..models.encoders.vae import VAEEncoder
+from ..models.stable_diffusion.diffusion import StableDiffusion
+from ..models.stable_diffusion.scheduler import DDPMScheduler
 from ..utils.image import rescale_tensor
 
 
@@ -18,7 +19,7 @@ class EmojiGenerator:
         text_encoder: CLIPTextEncoder,
         vae_encoder: VAEEncoder,
         scheduler: DDPMScheduler,
-        device: str = "cuda"
+        device: str = "cuda",
     ):
         self.diffusion_model = diffusion_model.eval()
         self.text_encoder = text_encoder
@@ -35,7 +36,7 @@ class EmojiGenerator:
         height: int = 32,
         width: int = 32,
         seed: Optional[int] = None,
-        batch_size: int = 1
+        batch_size: int = 1,
     ) -> List[Image.Image]:
 
         # Set random seed
@@ -59,8 +60,7 @@ class EmojiGenerator:
 
         # Create random latents
         latents_shape = (batch_size, 4, height // 8, width // 8)
-        latents = torch.randn(
-            latents_shape, generator=generator, device=self.device)
+        latents = torch.randn(latents_shape, generator=generator, device=self.device)
 
         # Denoising loop
         for t in tqdm(self.scheduler.timesteps, desc="Generating"):
@@ -68,13 +68,13 @@ class EmojiGenerator:
             latent_model_input = torch.cat([latents] * 2)
 
             # Predict noise
-            noise_pred = self.diffusion_model(
-                latent_model_input, text_embeddings, t)
+            noise_pred = self.diffusion_model(latent_model_input, text_embeddings, t)
 
             # Perform classifier-free guidance
             noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-            noise_pred = noise_pred_uncond + guidance_scale * \
-                (noise_pred_text - noise_pred_uncond)
+            noise_pred = noise_pred_uncond + guidance_scale * (
+                noise_pred_text - noise_pred_uncond
+            )
 
             # Compute previous noisy sample
             latents = self.scheduler.step(t, latents, noise_pred)
@@ -91,39 +91,35 @@ class EmojiGenerator:
 
     @classmethod
     def from_pretrained(
-        cls,
-        model_path: str,
-        config: dict,
-        device: str = "cuda"
+        cls, model_path: str, config: dict, device: str = "cuda"
     ) -> "EmojiGenerator":
 
         # Load models
         diffusion_model = StableDiffusion(
-            h_dim=config['model']['stable_diffusion']['h_dim'],
-            n_head=config['model']['stable_diffusion']['n_head']
+            h_dim=config["model"]["stable_diffusion"]["h_dim"],
+            n_head=config["model"]["stable_diffusion"]["n_head"],
         ).to(device)
 
         text_encoder = CLIPTextEncoder(
-            model_id=config['model']['clip']['model_id'],
-            device=device
+            model_id=config["model"]["clip"]["model_id"], device=device
         )
 
         vae_encoder = VAEEncoder(
-            model_id=config['model']['vae']['model_id'],
-            scaling_factor=config['model']['vae']['scaling_factor']
+            model_id=config["model"]["vae"]["model_id"],
+            scaling_factor=config["model"]["vae"]["scaling_factor"],
         ).to(device)
 
         # Load trained weights
         checkpoint = torch.load(model_path, map_location=device)
-        diffusion_model.load_state_dict(checkpoint['model_state_dict'])
+        diffusion_model.load_state_dict(checkpoint["model_state_dict"])
 
         # Create scheduler
         generator = torch.Generator(device=device)
         scheduler = DDPMScheduler(
             random_generator=generator,
-            train_timesteps=config['model']['stable_diffusion']['num_train_timesteps'],
-            beta_start=config['model']['stable_diffusion']['beta_start'],
-            beta_end=config['model']['stable_diffusion']['beta_end']
+            train_timesteps=config["model"]["stable_diffusion"]["num_train_timesteps"],
+            beta_start=config["model"]["stable_diffusion"]["beta_start"],
+            beta_end=config["model"]["stable_diffusion"]["beta_end"],
         )
 
         return cls(diffusion_model, text_encoder, vae_encoder, scheduler, device)

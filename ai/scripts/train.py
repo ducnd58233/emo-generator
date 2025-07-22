@@ -1,27 +1,42 @@
-from src.utils.config import load_config, merge_configs
-from src.utils.model import set_seed, get_device
+import argparse
+import os
+import sys
+
 from src.data.data_loaders import create_data_loaders
 from src.training.trainer import StableDiffusionTrainer
-import argparse
-import sys
-import os
+from src.utils.config import load_config, merge_configs
+from src.utils.model import get_device, set_seed
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Train Stable Diffusion for Emoji Generation')
-    parser.add_argument('--config', type=str, default='config/model.yaml',
-                        help='Path to model config file')
-    parser.add_argument('--train_config', type=str, default='config/training.yaml',
-                        help='Path to training config file')
-    parser.add_argument('--data_config', type=str, default='config/data.yaml',
-                        help='Path to data config file')
-    parser.add_argument('--device', type=str,
-                        default=None, help='Device to use')
-    parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    parser.add_argument('--resume', type=str, default=None,
-                        help='Resume from checkpoint')
+        description="Train Stable Diffusion for Emoji Generation"
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="config/model.yaml",
+        help="Path to model config file",
+    )
+    parser.add_argument(
+        "--train_config",
+        type=str,
+        default="config/training.yaml",
+        help="Path to training config file",
+    )
+    parser.add_argument(
+        "--data_config",
+        type=str,
+        default="config/data.yaml",
+        help="Path to data config file",
+    )
+    parser.add_argument("--device", type=str, default=None, help="Device to use")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--resume", type=str, default=None, help="Resume from checkpoint"
+    )
 
     args = parser.parse_args()
 

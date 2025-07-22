@@ -1,6 +1,7 @@
-import torch
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import torch
 
 
 def save_checkpoint(
@@ -15,16 +16,16 @@ def save_checkpoint(
 ) -> None:
     """Save model checkpoint"""
     checkpoint = {
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'lr_scheduler_state_dict': lr_scheduler.state_dict(),
-        'loss': loss,
-        **kwargs
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "lr_scheduler_state_dict": lr_scheduler.state_dict(),
+        "loss": loss,
+        **kwargs,
     }
 
     if scaler:
-        checkpoint['scaler_state_dict'] = scaler.state_dict()
+        checkpoint["scaler_state_dict"] = scaler.state_dict()
 
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     torch.save(checkpoint, filepath)
@@ -36,20 +37,20 @@ def load_checkpoint(
     optimizer: Optional[torch.optim.Optimizer] = None,
     lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
     scaler: Optional[torch.cuda.amp.GradScaler] = None,
-    device: str = "cuda"
+    device: str = "cuda",
 ) -> Dict[str, Any]:
     """Load model checkpoint"""
     checkpoint = torch.load(filepath, map_location=device)
 
-    model.load_state_dict(checkpoint['model_state_dict'])
+    model.load_state_dict(checkpoint["model_state_dict"])
 
     if optimizer:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
     if lr_scheduler:
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler_state_dict'])
+        lr_scheduler.load_state_dict(checkpoint["lr_scheduler_state_dict"])
 
-    if scaler and 'scaler_state_dict' in checkpoint:
-        scaler.load_state_dict(checkpoint['scaler_state_dict'])
+    if scaler and "scaler_state_dict" in checkpoint:
+        scaler.load_state_dict(checkpoint["scaler_state_dict"])
 
     return checkpoint

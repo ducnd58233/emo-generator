@@ -15,28 +15,25 @@ Requirements:
 """
 import argparse
 import logging
-import sys
 import re
-from pathlib import Path
 import zipfile
+from pathlib import Path
+
 import gdown
 
-DATA_DIR = Path(__file__).parent.parent / 'datasets'
+DATA_DIR = Path(__file__).parent.parent / "datasets"
 
 # Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(levelname)s] %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 
 def extract_file_id(gdrive_url: str) -> str:
     """Extract the file ID from a Google Drive share link."""
-    match = re.search(r'/d/([\w-]+)', gdrive_url)
+    match = re.search(r"/d/([\w-]+)", gdrive_url)
     if match:
         return match.group(1)
     # Alternative format: open?id=FILEID
-    match = re.search(r'id=([\w-]+)', gdrive_url)
+    match = re.search(r"id=([\w-]+)", gdrive_url)
     if match:
         return match.group(1)
     raise ValueError(f"Could not extract file ID from URL: {gdrive_url}")
@@ -44,7 +41,7 @@ def extract_file_id(gdrive_url: str) -> str:
 
 def safe_extract_zip(zip_path: Path, extract_to: Path):
     """Safely extract a zip file to the target directory, preventing path traversal."""
-    with zipfile.ZipFile(zip_path, 'r') as zf:
+    with zipfile.ZipFile(zip_path, "r") as zf:
         for member in zf.infolist():
             member_path = extract_to / member.filename
             try:
@@ -66,10 +63,11 @@ def download_gdrive_file(gdrive_url: str, output_dir: Path) -> Path:
     file_id = extract_file_id(gdrive_url)
     output_dir.mkdir(parents=True, exist_ok=True)
     # gdown will name the file as the original name by default
-    url = f'https://drive.google.com/uc?id={file_id}'
+    url = f"https://drive.google.com/uc?id={file_id}"
     logging.info(f"Downloading: {gdrive_url}")
     output_path = gdown.download(
-        url, output=None, quiet=False, fuzzy=True, use_cookies=False)
+        url, output=None, quiet=False, fuzzy=True, use_cookies=False
+    )
     if output_path is None:
         raise Exception(f"Failed to download file from: {gdrive_url}")
     output_path = Path(output_path)
@@ -84,14 +82,15 @@ def download_gdrive_file(gdrive_url: str, output_dir: Path) -> Path:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download and extract files from Google Drive links.")
-    parser.add_argument('links', nargs='+', help='Google Drive share links')
+        description="Download and extract files from Google Drive links."
+    )
+    parser.add_argument("links", nargs="+", help="Google Drive share links")
     args = parser.parse_args()
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     for link in args.links:
-        if not link.strip() or link.strip() == '\\':
+        if not link.strip() or link.strip() == "\\":
             logging.warning(f"Skipping invalid argument: {link!r}")
             continue
         try:
@@ -104,12 +103,13 @@ def main():
                     logging.info(f"Removed zip file: {file_path.name}")
                 except Exception as del_err:
                     logging.warning(
-                        f"Could not remove zip file {file_path.name}: {del_err}")
+                        f"Could not remove zip file {file_path.name}: {del_err}"
+                    )
             else:
                 logging.info(f"File is not a zip: {file_path.name}")
         except Exception as e:
             logging.error(f"Error processing {link}: {e}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -113,6 +113,13 @@ Download and extract datasets from Google Drive:
 poetry run python scripts/download_and_extract_gdrive.py <gdrive_link1> [<gdrive_link2> ...]
 ```
 
+Example
+```bash
+poetry run python scripts/download_and_extract_gdrive.py \
+        https://drive.google.com/file/d/15Z_F4Dwgb3NLqEGnVMUEJqyxXgW7Gx-h/view?usp=sharing \
+        https://drive.google.com/file/d/15g5wrEEIXcxmlekgFTnIwIlew3okBSsj/view?usp=sharing
+```
+
 All files will be downloaded to `ai/datasets`. Zip archives are automatically extracted.
 
 ---

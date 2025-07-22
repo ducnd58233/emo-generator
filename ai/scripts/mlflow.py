@@ -5,11 +5,18 @@ import sys
 def start_mlflow_server():
     """Start MLflow tracking server"""
     cmd = [
-        sys.executable, "-m", "mlflow", "server",
-        "--backend-store-uri", "sqlite:///mlflow.db",
-        "--default-artifact-root", "./mlruns",
-        "--host", "0.0.0.0",
-        "--port", "5000"
+        sys.executable,
+        "-m",
+        "mlflow",
+        "server",
+        "--backend-store-uri",
+        "sqlite:///mlflow.db",
+        "--default-artifact-root",
+        "./mlruns",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5000",
     ]
 
     print("Starting MLflow server...")

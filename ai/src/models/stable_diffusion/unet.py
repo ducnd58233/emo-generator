@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .attention import SelfAttention, CrossAttention
+
+from .attention import CrossAttention, SelfAttention
 
 
 class TimeEmbedding(nn.Module):
@@ -18,29 +19,29 @@ class TimeEmbedding(nn.Module):
 
 
 class UNETResidualBlock(nn.Module):
-    def __init__(
-            self,
-            in_channels: int,
-            out_channels: int,
-            time_dim: int = 1280
-    ):
+    def __init__(self, in_channels: int, out_channels: int, time_dim: int = 1280):
         super().__init__()
         self.gn_feature = nn.GroupNorm(32, in_channels)
         self.conv_feature = nn.Conv2d(
-            in_channels, out_channels, kernel_size=3, padding=1)
+            in_channels, out_channels, kernel_size=3, padding=1
+        )
         self.time_embedding_proj = nn.Linear(time_dim, out_channels)
 
         self.gn_merged = nn.GroupNorm(32, out_channels)
         self.conv_merged = nn.Conv2d(
-            out_channels, out_channels, kernel_size=3, padding=1)
+            out_channels, out_channels, kernel_size=3, padding=1
+        )
 
         if in_channels == out_channels:
             self.residual_connection = nn.Identity()
         else:
             self.residual_connection = nn.Conv2d(
-                in_channels, out_channels, kernel_size=1, padding=0)
+                in_channels, out_channels, kernel_size=1, padding=0
+            )
 
-    def forward(self, input_feature: torch.Tensor, time_emb: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, input_feature: torch.Tensor, time_emb: torch.Tensor
+    ) -> torch.Tensor:
         residual = input_feature
 
         h = self.gn_feature(input_feature)
@@ -65,22 +66,23 @@ class UNETAttentionBlock(nn.Module):
         embed_dim = num_heads * head_dim
 
         self.gn_in = nn.GroupNorm(32, embed_dim, eps=1e-6)
-        self.proj_in = nn.Conv2d(embed_dim, embed_dim,
-                                 kernel_size=1, padding=0)
+        self.proj_in = nn.Conv2d(embed_dim, embed_dim, kernel_size=1, padding=0)
 
         self.ln_1 = nn.LayerNorm(embed_dim)
         self.attn_1 = SelfAttention(num_heads, embed_dim, in_proj_bias=False)
         self.ln_2 = nn.LayerNorm(embed_dim)
         self.attn_2 = CrossAttention(
-            num_heads, embed_dim, context_dim, in_proj_bias=False)
+            num_heads, embed_dim, context_dim, in_proj_bias=False
+        )
         self.ln_3 = nn.LayerNorm(embed_dim)
 
         self.ffn_geglu = nn.Linear(embed_dim, 4 * embed_dim * 2)
         self.ffn_out = nn.Linear(4 * embed_dim, embed_dim)
-        self.proj_out = nn.Conv2d(
-            embed_dim, embed_dim, kernel_size=1, padding=0)
+        self.proj_out = nn.Conv2d(embed_dim, embed_dim, kernel_size=1, padding=0)
 
-    def forward(self, input_tensor: torch.Tensor, context_tensor: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, input_tensor: torch.Tensor, context_tensor: torch.Tensor
+    ) -> torch.Tensor:
         skip_connection = input_tensor
 
         B, C, H, W = input_tensor.shape
@@ -117,17 +119,20 @@ class UNETAttentionBlock(nn.Module):
 class Upsample(nn.Module):
     def __init__(self, num_channels: int):
         super().__init__()
-        self.conv = nn.Conv2d(num_channels, num_channels,
-                              kernel_size=3, padding=1)
+        self.conv = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
 
     def forward(self, feature_map: torch.Tensor) -> torch.Tensor:
-        x = F.interpolate(feature_map, scale_factor=2, mode='nearest')
+        x = F.interpolate(feature_map, scale_factor=2, mode="nearest")
         return self.conv(x)
 
 
 class SwitchSequential(nn.Sequential):
-    def forward(self, x: torch.Tensor, guidance_context: torch.Tensor,
-                time_embedding: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        guidance_context: torch.Tensor,
+        time_embedding: torch.Tensor,
+    ) -> torch.Tensor:
         for module in self:
             if isinstance(module, UNETAttentionBlock):
                 x = module(x, guidance_context)
@@ -147,17 +152,18 @@ class UNET(nn.Module):
         self.conv_in = nn.Conv2d(4, h_dim, kernel_size=3, padding=1)
 
         # Encoder
-        self.down_blocks = nn.ModuleList([
-            SwitchSequential(
-                UNETResidualBlock(h_dim, h_dim),
-                UNETAttentionBlock(n_head, h_dim // n_head),
-            ),
-            SwitchSequential(
-                UNETResidualBlock(h_dim, h_dim * 2),
-                nn.Conv2d(h_dim * 2, h_dim * 2,
-                          kernel_size=3, stride=2, padding=1),
-            ),
-        ])
+        self.down_blocks = nn.ModuleList(
+            [
+                SwitchSequential(
+                    UNETResidualBlock(h_dim, h_dim),
+                    UNETAttentionBlock(n_head, h_dim // n_head),
+                ),
+                SwitchSequential(
+                    UNETResidualBlock(h_dim, h_dim * 2),
+                    nn.Conv2d(h_dim * 2, h_dim * 2, kernel_size=3, stride=2, padding=1),
+                ),
+            ]
+        )
 
         # Bottleneck
         self.bottleneck = SwitchSequential(
@@ -167,21 +173,24 @@ class UNET(nn.Module):
         )
 
         # Decoder
-        self.up_blocks = nn.ModuleList([
-            SwitchSequential(
-                UNETResidualBlock(h_dim * 4, h_dim * 2),
-                UNETResidualBlock(h_dim * 2, h_dim),
-                Upsample(h_dim),
-            ),
-            SwitchSequential(
-                UNETResidualBlock(h_dim * 2, h_dim),
-                UNETAttentionBlock(n_head, h_dim // n_head),
-                UNETResidualBlock(h_dim, h_dim),
-            ),
-        ])
+        self.up_blocks = nn.ModuleList(
+            [
+                SwitchSequential(
+                    UNETResidualBlock(h_dim * 4, h_dim * 2),
+                    UNETResidualBlock(h_dim * 2, h_dim),
+                    Upsample(h_dim),
+                ),
+                SwitchSequential(
+                    UNETResidualBlock(h_dim * 2, h_dim),
+                    UNETAttentionBlock(n_head, h_dim // n_head),
+                    UNETResidualBlock(h_dim, h_dim),
+                ),
+            ]
+        )
 
-    def forward(self, latent: torch.Tensor, context: torch.Tensor,
-                time: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, latent: torch.Tensor, context: torch.Tensor, time: torch.Tensor
+    ) -> torch.Tensor:
         # Initial conv
         x = self.conv_in(latent)
 
@@ -209,8 +218,7 @@ class UNETOutputLayer(nn.Module):
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
         self.gn = nn.GroupNorm(32, in_channels)
-        self.conv = nn.Conv2d(in_channels, out_channels,
-                              kernel_size=3, padding=1)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.gn(x)

@@ -1,14 +1,15 @@
-import torch
-import numpy as np
-from PIL import Image
 from typing import Tuple
+
+import numpy as np
+import torch
+from PIL import Image
 
 
 def rescale_tensor(
     tensor: torch.Tensor,
     in_range: Tuple[float, float],
     out_range: Tuple[float, float],
-    clamp: bool = True
+    clamp: bool = True,
 ) -> torch.Tensor:
     """Rescale tensor values from input range to output range"""
     in_min, in_max = in_range

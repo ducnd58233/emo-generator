@@ -1,8 +1,9 @@
+import os
+import random
+
+import numpy as np
 import torch
 import torch.nn as nn
-import random
-import numpy as np
-import os
 
 
 def set_seed(seed: int = 42) -> None:
@@ -38,7 +39,7 @@ def get_device() -> str:
     """Get optimal device for training"""
     if torch.cuda.is_available():
         return "cuda"
-    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return "mps"
     else:
         return "cpu"
