@@ -1,0 +1,12 @@
+data:
+  data_dirs:
+    - "datasets/blobs_crawled_data"
+    - "datasets/pepe_crawled_data"
+  train_split: 0.9
+  val_split: 0.1
+  
+transforms:
+  resize: [32, 32]
+  normalize:
+    mean: [0.5, 0.5, 0.5]
+    std: [0.5, 0.5, 0.5]

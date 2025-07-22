@@ -1,6 +1,10 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,windows,linux,macos
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,windows,linux,macos
-data/
+
+datasets/
+mlruns/
+models/
+mlflow.db
 
 ### Linux ###
 *~

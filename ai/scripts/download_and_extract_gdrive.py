@@ -21,7 +21,7 @@ from pathlib import Path
 import zipfile
 import gdown
 
-DATA_DIR = Path(__file__).parent.parent / 'data'
+DATA_DIR = Path(__file__).parent.parent / 'datasets'
 
 # Set up logging
 logging.basicConfig(

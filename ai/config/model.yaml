@@ -1,0 +1,38 @@
+model:
+  stable_diffusion:
+    h_dim: 384
+    n_head: 8
+    time_dim: 1280
+    num_train_timesteps: 1000
+    beta_start: 0.00085
+    beta_end: 0.012
+  
+  clip:
+    low_cpu_mem_usage: true
+    model_id: "openai/clip-vit-base-patch32"
+    max_length: 77
+  
+  vae:
+    low_cpu_mem_usage: true
+    model_id: "stabilityai/sd-vae-ft-mse"
+    scaling_factor: 0.18215
+
+training:
+  epochs: 300
+  batch_size: 16
+  learning_rate: 1e-4
+  eta_min: 1e-5
+  gradient_accumulation_steps: 1
+  mixed_precision: true
+  
+data:
+  image_size: [32, 32]
+  latent_size: [4, 4]
+  num_workers: 2
+  pin_memory: true
+  persistent_workers: true
+
+inference:
+  num_inference_steps: 100
+  guidance_scale: 7.5
+  seed: 42
