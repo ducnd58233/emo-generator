@@ -155,7 +155,7 @@ class StableDiffusionTrainer:
                     batch_loss,
                     os.path.join(
                         self.config["experiment"]["save_dir"],
-                        f"checkpoint_epoch_{self.current_epoch}_step_{self.global_step}.pt",
+                        f"checkpoint_epoch_{self.current_epoch + 1}_step_{self.global_step}.pt",
                     ),
                     self.scaler,
                 )
