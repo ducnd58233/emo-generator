@@ -1,0 +1,11 @@
+name: emo-generator-ai
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - setuptools
+  - poetry
+  - nvidia::cuda-toolkit
+  - cudnn
+prefix: C:\Users\Admin\anaconda3\envs\emo-generator-ai
