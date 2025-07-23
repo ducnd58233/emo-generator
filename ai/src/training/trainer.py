@@ -12,11 +12,20 @@ from ..models.encoders.clip import CLIPTextEncoder
 from ..models.encoders.vae import VAEEncoder
 from ..models.stable_diffusion.diffusion import StableDiffusion
 from ..models.stable_diffusion.scheduler import DDPMScheduler
-from ..utils.checkpoint import save_checkpoint
+from ..utils.checkpoint import load_checkpoint, save_checkpoint
+from ..utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class StableDiffusionTrainer:
     def __init__(self, config: Dict[str, Any], device: str = "cuda"):
+        """
+        Initialize the StableDiffusionTrainer.
+        Args:
+            config: Configuration dictionary.
+            device: Device to use for training.
+        """
         self.config = config
         self.device = device
 
@@ -67,12 +76,19 @@ class StableDiffusionTrainer:
 
         self._init_mlflow()
 
-    def _init_mlflow(self):
-        """Initialize MLflow tracking"""
+    def _init_mlflow(self) -> None:
+        """Initialize MLflow tracking."""
         mlflow.set_tracking_uri(self.config["mlflow"]["tracking_uri"])
         mlflow.set_experiment(self.config["experiment"]["name"])
 
     def train_epoch(self, train_loader: DataLoader) -> float:
+        """
+        Train for one epoch.
+        Args:
+            train_loader: DataLoader for training data.
+        Returns:
+            Average epoch loss.
+        """
         self.diffusion_model.train()
         epoch_loss = 0.0
         num_batches = len(train_loader)
@@ -158,6 +174,9 @@ class StableDiffusionTrainer:
                         f"checkpoint_epoch_{self.current_epoch + 1}_step_{self.global_step}.pt",
                     ),
                     self.scaler,
+                    global_step=self.global_step,
+                    best_loss=self.best_loss,
+                    max_checkpoints=self.config["experiment"].get("max_checkpoints", 1),
                 )
 
             # Update progress bar
@@ -171,6 +190,13 @@ class StableDiffusionTrainer:
         return epoch_loss / num_batches
 
     def validate(self, val_loader: DataLoader) -> float:
+        """
+        Validate the model.
+        Args:
+            val_loader: DataLoader for validation data.
+        Returns:
+            Average validation loss.
+        """
         self.diffusion_model.eval()
         val_loss = 0.0
         num_batches = len(val_loader)
@@ -206,8 +232,18 @@ class StableDiffusionTrainer:
 
         return val_loss / num_batches
 
-    def train(self, train_loader: DataLoader, val_loader: Optional[DataLoader] = None):
-        print(f"Starting training for {self.config['training']['epochs']} epochs...")
+    def train(
+        self, train_loader: DataLoader, val_loader: Optional[DataLoader] = None
+    ) -> None:
+        """
+        Run the full training loop.
+        Args:
+            train_loader: DataLoader for training data.
+            val_loader: DataLoader for validation data (optional).
+        """
+        logger.info(
+            f"Starting training for {self.config['training']['epochs']} epochs..."
+        )
 
         with mlflow.start_run(run_name=f"{self.config['experiment']['name']}_run"):
             for epoch in range(self.current_epoch, self.config["training"]["epochs"]):
@@ -255,10 +291,17 @@ class StableDiffusionTrainer:
             # Log final model
             self.save_model_to_registry(is_final=True)
 
-        print("Training completed!")
+        logger.info("Training completed!")
 
-    def save_model_to_registry(self, is_best: bool = False, is_final: bool = False):
-        """Save model to MLflow registry with versioning"""
+    def save_model_to_registry(
+        self, is_best: bool = False, is_final: bool = False
+    ) -> None:
+        """
+        Save model to MLflow registry with versioning and optionally delete local checkpoint.
+        Args:
+            is_best: Whether this is the best model so far.
+            is_final: Whether this is the final model.
+        """
         model_name = self.config["experiment"]["model_name"]
 
         # Create model signature
@@ -287,7 +330,20 @@ class StableDiffusionTrainer:
             registered_model_name=model_name,
         )
 
-        tags = {"epoch": str(self.current_epoch)}
+        if self.config["experiment"].get("delete_after_mlflow", False):
+            save_dir = self.config["experiment"]["save_dir"]
+            from ..utils.checkpoint import delete_file
+
+            checkpoints = [f for f in os.listdir(save_dir) if f.endswith(".pt")]
+            if checkpoints:
+                checkpoints = sorted(
+                    checkpoints,
+                    key=lambda x: os.path.getmtime(os.path.join(save_dir, x)),
+                )
+                latest_ckpt = os.path.join(save_dir, checkpoints[-1])
+                delete_file(latest_ckpt)
+
+        tags = {"epoch": str(self.current_epoch + 1), "step": str(self.global_step)}
         if is_best:
             tags.update({"stage": "best", "validation_loss": str(self.best_loss)})
         if is_final:
@@ -307,3 +363,24 @@ class StableDiffusionTrainer:
             client.transition_model_version_stage(
                 model_name, model_version.version, "Production"
             )
+
+    def load_checkpoint(self, filepath: str) -> None:
+        """
+        Load model, optimizer, scheduler, scaler, and training state from checkpoint for resume training.
+        Args:
+            filepath: Path to checkpoint file.
+        """
+        checkpoint = load_checkpoint(
+            filepath,
+            self.diffusion_model,
+            self.optimizer,
+            self.lr_scheduler,
+            self.scaler,
+            device=self.device,
+        )
+        self.current_epoch = checkpoint.get("epoch", 0) + 1
+        self.best_loss = checkpoint.get("best_loss", float("inf"))
+        self.global_step = checkpoint.get("global_step", 0)
+        logger.info(
+            f"Checkpoint loaded: epoch={self.current_epoch}, global_step={self.global_step}, best_loss={self.best_loss}"
+        )

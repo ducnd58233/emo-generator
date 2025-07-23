@@ -5,7 +5,7 @@ dependencies:
   - python=3.11
   - cudnn
   - setuptools
-  - poetry
+  - poetry=2.1
   - nvidia::cuda-toolkit
   - conda-forge::accelerate
 prefix: D:\miniconda3\envs\emo-generator-ai

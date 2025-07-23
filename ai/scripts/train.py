@@ -1,16 +1,39 @@
 import argparse
 import os
 import sys
+from typing import Optional
 
 from src.data.data_loaders import create_data_loaders
 from src.training.trainer import StableDiffusionTrainer
 from src.utils.config import load_config, merge_configs
+from src.utils.logging import get_logger
 from src.utils.model import get_device, set_seed
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+logger = get_logger(__name__)
 
-def main():
+
+def find_latest_checkpoint(save_dir: str) -> Optional[str]:
+    """
+    Find the latest checkpoint file in a directory.
+    Args:
+        save_dir: Directory to search.
+    Returns:
+        Path to latest checkpoint or None.
+    """
+    if not os.path.isdir(save_dir):
+        return None
+    checkpoints = [f for f in os.listdir(save_dir) if f.endswith(".pt")]
+    if not checkpoints:
+        return None
+    checkpoints = sorted(
+        checkpoints, key=lambda x: os.path.getmtime(os.path.join(save_dir, x))
+    )
+    return os.path.join(save_dir, checkpoints[-1])
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Train Stable Diffusion for Emoji Generation"
     )
@@ -37,39 +60,29 @@ def main():
     parser.add_argument(
         "--resume", type=str, default=None, help="Resume from checkpoint"
     )
-
     args = parser.parse_args()
 
-    # Set seed for reproducibility
     set_seed(args.seed)
-
-    # Load configurations
     model_config = load_config(args.config)
     train_config = load_config(args.train_config)
     data_config = load_config(args.data_config)
-
-    # Merge configurations
     config = merge_configs(model_config, train_config, data_config)
-
-    # Set device
     device = args.device or get_device()
-    print(f"Using device: {device}")
-
-    # Create data loaders
-    print("Creating data loaders...")
+    logger.info(f"Using device: {device}")
+    logger.info("Creating data loaders...")
     train_loader, val_loader = create_data_loaders(config)
-    print(f"Train samples: {len(train_loader.dataset)}")
-    print(f"Val samples: {len(val_loader.dataset)}")
-
-    # Initialize trainer
+    logger.info(f"Train samples: {len(train_loader.dataset)}")
+    logger.info(f"Val samples: {len(val_loader.dataset)}")
     trainer = StableDiffusionTrainer(config, device)
 
-    # Load checkpoint if resuming
-    if args.resume:
-        print(f"Resuming from checkpoint: {args.resume}")
-        trainer.load_checkpoint(args.resume)
-
-    # Start training
+    resume_path = args.resume or find_latest_checkpoint(
+        config["experiment"]["save_dir"]
+    )
+    if resume_path:
+        logger.info(f"Resuming from checkpoint: {resume_path}")
+        trainer.load_checkpoint(resume_path)
+    else:
+        logger.info("No checkpoint found, starting training from scratch.")
     trainer.train(train_loader, val_loader)
 
 

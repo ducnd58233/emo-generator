@@ -49,17 +49,31 @@ cd emo-generator/ai
 ```bash
 conda env create -f environment.yml
 conda activate emo-generator-ai
-conda install setuptools poetry
-poetry install --no-root
+poetry install
 ```
 
 #### Export conda env
 ```bash
 conda env export --from-history --no-builds > environment.yml
 ```
+
+#### Create .env file
+```bash
+cp .env.example .env
+```
+- And add your HuggingFace token
+- 
 ---
 
 ## 🛠️ Usage
+
+### MLflow Tracking
+
+Start the MLflow tracking server:
+
+```bash
+poetry run python -m scripts.mlflow
+```
 
 ### Training
 
@@ -93,14 +107,6 @@ poetry run python -m scripts.evaluate \
   --model_path <path_to_checkpoint> \
   --config config/model.yaml \
   --data_config config/data.yaml
-```
-
-### MLflow Tracking
-
-Start the MLflow tracking server:
-
-```bash
-poetry run python -m scripts.mlflow
 ```
 
 ---
