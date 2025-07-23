@@ -9,7 +9,6 @@ experiment:
   max_checkpoints: 5
   log_every: 10
   save_every: 100
-  validate_every: 200
 
 optimization:
   weight_decay: 0.01

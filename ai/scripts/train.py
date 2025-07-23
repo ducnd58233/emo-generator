@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 from src.data.data_loaders import create_data_loaders
@@ -9,7 +10,7 @@ from src.utils.config import load_config, merge_configs
 from src.utils.logging import get_logger
 from src.utils.model import get_device, set_seed
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(str(Path(__file__).parent.parent))
 
 logger = get_logger(__name__)
 
@@ -70,7 +71,7 @@ def main() -> None:
     device = args.device or get_device()
     logger.info(f"Using device: {device}")
     logger.info("Creating data loaders...")
-    train_loader, val_loader = create_data_loaders(config)
+    train_loader, val_loader = create_data_loaders(config, seed=args.seed)
     logger.info(f"Train samples: {len(train_loader.dataset)}")
     logger.info(f"Val samples: {len(val_loader.dataset)}")
     trainer = StableDiffusionTrainer(config, device)
@@ -79,8 +80,12 @@ def main() -> None:
         config["experiment"]["save_dir"]
     )
     if resume_path:
-        logger.info(f"Resuming from checkpoint: {resume_path}")
-        trainer.load_checkpoint(resume_path)
+        try:
+            logger.info(f"Resuming from checkpoint: {resume_path}")
+            trainer.load_checkpoint(resume_path)
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint '{resume_path}': {e}")
+            logger.warning("Starting training from scratch due to checkpoint error.")
     else:
         logger.info("No checkpoint found, starting training from scratch.")
     trainer.train(train_loader, val_loader)

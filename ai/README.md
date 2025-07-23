@@ -53,17 +53,19 @@ poetry install
 ```
 
 #### Export conda env
+
 ```bash
 conda env export --from-history --no-builds > environment.yml
 ```
 
 #### Create .env file
+
 ```bash
 cp .env.example .env
 ```
+
 - And add your HuggingFace token
-- 
----
+- ***
 
 ## 🛠️ Usage
 
@@ -93,9 +95,14 @@ Generate emojis from text prompts:
 ```bash
 poetry run python -m scripts.inference \
   --model_path <path_to_checkpoint> \
-  --prompt "a happy smiling emoji" \
-  --num_images 4 \
-  --output_dir outputs
+  --config config/model.yaml \
+  --prompt "a confused blob emoji with wide eyes" \
+  --num_images 1 \
+  --num_steps 100 \
+  --latent_height 4 \
+  --latent_width 4 \
+  --seed 42 \
+  --device cuda
 ```
 
 ### Evaluation
@@ -106,8 +113,41 @@ Evaluate your model and generate qualitative samples:
 poetry run python -m scripts.evaluate \
   --model_path <path_to_checkpoint> \
   --config config/model.yaml \
-  --data_config config/data.yaml
+  --data_config config/data.yaml \
+  --training_config config/training.yaml
 ```
+
+Skip sample generation for faster evaluation:
+
+```bash
+poetry run python -m scripts.evaluate \
+  --model_path <path_to_checkpoint> \
+  --config config/model.yaml \
+  --data_config config/data.yaml \
+  --training_config config/training.yaml \
+  --skip_samples
+```
+
+### Model Management
+
+Register a trained model to MLflow Model Registry:
+
+```bash
+poetry run python -m scripts.register_to_mlflow \
+  --checkpoint_path models/best_model.pt \
+  --model_name emoji-stable-diffusion \
+  --alias candidate
+```
+
+## Configuration
+
+The project uses three separate YAML configuration files for modularity and flexibility:
+
+- `config/model.yaml`: Model and training hyperparameters
+- `config/data.yaml`: Data and transform settings
+- `config/training.yaml`: Experiment, MLflow, and optimization settings
+
+All scripts expect these files to be present and kept in sync.
 
 ---
 
@@ -120,6 +160,7 @@ poetry run python scripts/download_and_extract_gdrive.py <gdrive_link1> [<gdrive
 ```
 
 Example
+
 ```bash
 poetry run python scripts/download_and_extract_gdrive.py \
         https://drive.google.com/file/d/15Z_F4Dwgb3NLqEGnVMUEJqyxXgW7Gx-h/view?usp=sharing \
@@ -152,7 +193,6 @@ ai/
 - For best performance and lower memory usage, ensure `accelerate` is installed (see [PyPI](https://pypi.org/project/accelerate/)).
 - If you encounter CUDA or memory errors, try reducing batch size or using CPU mode (`--device cpu`).
 - All configs are in YAML—customize model, data, and training easily.
-- Outputs and sample images are saved to `outputs/` or `evaluation_samples/`.
 - For more help, check issues or open a discussion.
 
 ---

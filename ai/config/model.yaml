@@ -10,7 +10,6 @@ model:
   clip:
     low_cpu_mem_usage: true
     model_id: "openai/clip-vit-base-patch32"
-    max_length: 77
   
   vae:
     low_cpu_mem_usage: true
@@ -34,5 +33,4 @@ data:
 
 inference:
   num_inference_steps: 100
-  guidance_scale: 7.5
   seed: 42

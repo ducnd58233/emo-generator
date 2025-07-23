@@ -5,6 +5,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from .logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def set_seed(seed: int = 42) -> None:
     """Set random seed for reproducibility"""
@@ -48,4 +52,4 @@ def get_device() -> str:
 def print_model_info(model: nn.Module, name: str = "Model") -> None:
     """Print model information"""
     total_params = count_parameters(model)
-    print(f"{name}: {total_params:,} trainable parameters")
+    logger.info(f"{name}: {total_params:,} trainable parameters")

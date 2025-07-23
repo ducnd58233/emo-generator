@@ -126,6 +126,17 @@ class Upsample(nn.Module):
         return self.conv(x)
 
 
+class Downsample(nn.Module):
+    def __init__(self, num_channels: int):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            num_channels, num_channels, kernel_size=3, stride=2, padding=1
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(x)
+
+
 class SwitchSequential(nn.Sequential):
     def forward(
         self,
@@ -144,46 +155,35 @@ class SwitchSequential(nn.Sequential):
 
 
 class UNET(nn.Module):
-    def __init__(self, h_dim: int = 384, n_head: int = 8):
+    def __init__(self, h_dim: int = 384, n_head: int = 8, time_dim: int = 1280):
         super().__init__()
-        # Simplified U-Net architecture for 32x32 images
 
-        # Initial conv
         self.conv_in = nn.Conv2d(4, h_dim, kernel_size=3, padding=1)
 
-        # Encoder
         self.down_blocks = nn.ModuleList(
             [
                 SwitchSequential(
-                    UNETResidualBlock(h_dim, h_dim),
+                    UNETResidualBlock(h_dim, h_dim, time_dim),
                     UNETAttentionBlock(n_head, h_dim // n_head),
-                ),
-                SwitchSequential(
-                    UNETResidualBlock(h_dim, h_dim * 2),
-                    nn.Conv2d(h_dim * 2, h_dim * 2, kernel_size=3, stride=2, padding=1),
+                    UNETResidualBlock(h_dim, h_dim, time_dim),
                 ),
             ]
         )
 
         # Bottleneck
         self.bottleneck = SwitchSequential(
-            UNETResidualBlock(h_dim * 2, h_dim * 2),
-            UNETAttentionBlock(n_head, (h_dim * 2) // n_head),
-            UNETResidualBlock(h_dim * 2, h_dim * 2),
+            UNETResidualBlock(h_dim, h_dim, time_dim),
+            UNETAttentionBlock(n_head, h_dim // n_head),
+            UNETResidualBlock(h_dim, h_dim, time_dim),
         )
 
         # Decoder
         self.up_blocks = nn.ModuleList(
             [
                 SwitchSequential(
-                    UNETResidualBlock(h_dim * 4, h_dim * 2),
-                    UNETResidualBlock(h_dim * 2, h_dim),
-                    Upsample(h_dim),
-                ),
-                SwitchSequential(
-                    UNETResidualBlock(h_dim * 2, h_dim),
+                    UNETResidualBlock(h_dim * 2, h_dim, time_dim),
                     UNETAttentionBlock(n_head, h_dim // n_head),
-                    UNETResidualBlock(h_dim, h_dim),
+                    UNETResidualBlock(h_dim, h_dim, time_dim),
                 ),
             ]
         )

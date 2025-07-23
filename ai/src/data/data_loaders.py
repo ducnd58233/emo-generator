@@ -7,7 +7,9 @@ from .datasets import EmojiDataset
 from .transforms import get_train_transforms, get_val_transforms
 
 
-def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
+def create_data_loaders(
+    config: Dict[str, Any], seed: int = 42
+) -> Tuple[DataLoader, DataLoader]:
     dataset = EmojiDataset(
         data_dirs=config["data"]["data_dirs"],
         transform=get_train_transforms(config["data"]["image_size"]),
@@ -18,7 +20,7 @@ def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]
     train_dataset, val_dataset = random_split(
         dataset,
         [train_size, val_size],
-        generator=torch.Generator().manual_seed(42),
+        generator=torch.Generator().manual_seed(seed),
     )
 
     val_dataset.dataset.transform = get_val_transforms(
@@ -32,6 +34,7 @@ def create_data_loaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]
         num_workers=config["data"]["num_workers"],
         pin_memory=config["data"]["pin_memory"],
         persistent_workers=config["data"]["persistent_workers"],
+        generator=torch.Generator().manual_seed(seed),
     )
 
     val_loader = DataLoader(

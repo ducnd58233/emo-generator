@@ -9,7 +9,7 @@ class VAEEncoder(nn.Module):
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
         self.vae = AutoencoderKL.from_pretrained(
-            config["model_id"], low_cpu_mem_usage=config["low_cpu_mem_usage"]
+            config["model_id"], low_cpu_mem_usage=bool(config["low_cpu_mem_usage"])
         )
         self.scaling_factor = float(config["scaling_factor"])
 

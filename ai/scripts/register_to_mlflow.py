@@ -1,14 +1,16 @@
 import argparse
-import os
 import sys
+from pathlib import Path
 
 import mlflow
 import mlflow.pytorch
 from mlflow.tracking import MlflowClient
 from src.inference.generator import EmojiGenerator
 from src.utils.config import load_config
+from src.utils.logging import get_logger
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(str(Path(__file__).parent.parent))
+logger = get_logger(__name__)
 
 
 def main():
@@ -40,10 +42,11 @@ def main():
         help="Name for MLflow registered model",
     )
     parser.add_argument(
-        "--stage",
+        "--alias",
         type=str,
-        default="None",
-        help="Stage to promote (e.g. Staging, Production)",
+        default="candidate",
+        choices=["candidate", "champion", "archived"],
+        help="Model alias to set (replaces deprecated stages)",
     )
     parser.add_argument(
         "--device", type=str, default="cpu", help="Device to load model"
@@ -61,31 +64,51 @@ def main():
     )
     model = generator.diffusion_model
 
-    # Log model to MLflow
     with mlflow.start_run(run_name=f"register_{args.model_name}") as run:
-        artifact_path = "model"
         mlflow.pytorch.log_model(
-            model, artifact_path=artifact_path, registered_model_name=args.model_name
+            model, name=args.model_name, registered_model_name=args.model_name
         )
-        # Log config yaml as artifact for reproducibility
+
         mlflow.log_artifact(args.config, artifact_path="config")
-        print(f"Logged model to MLflow run: {run.info.run_id}")
+        logger.info(f"Logged model to MLflow run: {run.info.run_id}")
 
     # Register model to Model Registry
     client = MlflowClient()
-    latest_version = client.get_latest_versions(args.model_name, stages=["None"])
-    if latest_version:
-        model_version = latest_version[0].version
-        print(f"Registered model: {args.model_name}, version: {model_version}")
-        if args.stage and args.stage.lower() != "none":
-            client.transition_model_version_stage(
-                args.model_name, model_version, args.stage
+    try:
+        latest_versions = client.get_latest_versions(args.model_name)
+        if latest_versions:
+            model_version = latest_versions[0].version
+            logger.info(
+                f"Registered model: {args.model_name}, version: {model_version}"
             )
-            print(
-                f"Promoted model {args.model_name} version {model_version} to stage {args.stage}"
-            )
-    else:
-        print("Model registration failed or not found.")
+
+            # Set alias using modern approach
+            if args.alias:
+                client.set_registered_model_alias(
+                    args.model_name, args.alias, model_version
+                )
+                logger.info(
+                    f"Set alias '{args.alias}' for model {args.model_name} version {model_version}"
+                )
+        else:
+            logger.error("Model registration failed or not found.")
+
+    except Exception as e:
+        logger.error(f"Failed to set model alias: {e}")
+        try:
+            all_versions = client.search_model_versions(f"name='{args.model_name}'")
+            if all_versions:
+                latest_version = max(all_versions, key=lambda x: int(x.version))
+                logger.info(f"Found model version: {latest_version.version}")
+                if args.alias:
+                    client.set_registered_model_alias(
+                        args.model_name, args.alias, latest_version.version
+                    )
+                    logger.info(
+                        f"Set alias '{args.alias}' for model {args.model_name} version {latest_version.version}"
+                    )
+        except Exception as fallback_e:
+            logger.error(f"Fallback also failed: {fallback_e}")
 
 
 if __name__ == "__main__":

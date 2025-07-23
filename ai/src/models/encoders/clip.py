@@ -9,14 +9,13 @@ class CLIPTextEncoder(nn.Module):
     def __init__(self, config: Dict[str, Any], device: str = "cuda"):
         super().__init__()
         self.tokenizer = CLIPTokenizer.from_pretrained(
-            config["model_id"], low_cpu_mem_usage=config["low_cpu_mem_usage"]
+            config["model_id"], low_cpu_mem_usage=bool(config["low_cpu_mem_usage"])
         )
         self.text_encoder = CLIPTextModel.from_pretrained(
-            config["model_id"], low_cpu_mem_usage=config["low_cpu_mem_usage"]
+            config["model_id"], low_cpu_mem_usage=bool(config["low_cpu_mem_usage"])
         )
         self.device = device
 
-        # Freeze parameters
         for param in self.text_encoder.parameters():
             param.requires_grad = False
 

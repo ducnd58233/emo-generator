@@ -2,6 +2,7 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,windows,linux,macos
 
 datasets/**
+outputs/**
 mlruns/
 models/**
 mlflow.db

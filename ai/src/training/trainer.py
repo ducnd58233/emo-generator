@@ -1,5 +1,4 @@
-import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import mlflow
 import torch
@@ -12,83 +11,87 @@ from ..models.encoders.clip import CLIPTextEncoder
 from ..models.encoders.vae import VAEEncoder
 from ..models.stable_diffusion.diffusion import StableDiffusion
 from ..models.stable_diffusion.scheduler import DDPMScheduler
-from ..utils.checkpoint import load_checkpoint, save_checkpoint
+from ..utils.checkpoint import CheckpointManager
 from ..utils.logging import get_logger
+from ..utils.mlflow import ModelRegistry
 
 logger = get_logger(__name__)
 
 
 class StableDiffusionTrainer:
+    """Stable Diffusion trainer with MLflow integration"""
+
     def __init__(self, config: Dict[str, Any], device: str = "cuda"):
-        """
-        Initialize the StableDiffusionTrainer.
-        Args:
-            config: Configuration dictionary.
-            device: Device to use for training.
-        """
         self.config = config
         self.device = device
+        self.current_epoch = 0
+        self.global_step = 0
+        self.best_loss = float("inf")
+        self.resume_batch_idx = 0
 
-        # Initialize models
+        self._init_models()
+        self._init_training_components()
+
+        self.model_registry = ModelRegistry(config["mlflow"]["tracking_uri"])
+        self.checkpoint_manager = CheckpointManager(
+            save_dir=config["experiment"]["save_dir"],
+            max_checkpoints=config["experiment"]["max_checkpoints"],
+        )
+
+        self._init_mlflow()
+
+    def _init_models(self):
+        """Initialize all models"""
+        model_config = self.config["model"]
+
         self.diffusion_model = StableDiffusion(
-            h_dim=config["model"]["stable_diffusion"]["h_dim"],
-            n_head=config["model"]["stable_diffusion"]["n_head"],
-        ).to(device)
+            h_dim=model_config["stable_diffusion"]["h_dim"],
+            n_head=model_config["stable_diffusion"]["n_head"],
+            time_dim=model_config["stable_diffusion"]["time_dim"],
+        ).to(self.device)
 
         self.text_encoder = CLIPTextEncoder(
-            config=config["model"]["clip"], device=device
+            config=model_config["clip"], device=self.device
         )
 
-        self.vae_encoder = VAEEncoder(config=config["model"]["vae"]).to(device)
+        self.vae_encoder = VAEEncoder(config=model_config["vae"]).to(self.device)
 
-        # Initialize scheduler
-        self.generator = torch.Generator(device=device)
+        self.generator = torch.Generator(device=self.device)
         self.scheduler = DDPMScheduler(
             random_generator=self.generator,
-            train_timesteps=config["model"]["stable_diffusion"]["num_train_timesteps"],
-            beta_start=config["model"]["stable_diffusion"]["beta_start"],
-            beta_end=config["model"]["stable_diffusion"]["beta_end"],
+            train_timesteps=model_config["stable_diffusion"]["num_train_timesteps"],
+            beta_start=model_config["stable_diffusion"]["beta_start"],
+            beta_end=model_config["stable_diffusion"]["beta_end"],
         )
 
-        # Initialize optimizer and scheduler
+    def _init_training_components(self):
+        """Initialize optimizer, scheduler, etc."""
+        training_config = self.config["training"]
+
         self.optimizer = torch.optim.AdamW(
             self.diffusion_model.parameters(),
-            lr=float(config["training"]["learning_rate"]),
-            weight_decay=float(config["optimization"]["weight_decay"]),
+            lr=float(training_config["learning_rate"]),
+            weight_decay=float(training_config.get("weight_decay", 0.01)),
         )
 
         self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
-            T_max=int(config["training"]["epochs"]),
-            eta_min=float(config["training"]["eta_min"]),
+            T_max=int(training_config["epochs"]),
+            eta_min=float(training_config["eta_min"]),
         )
 
-        # Mixed precision training
-        self.scaler = GradScaler() if config["training"]["mixed_precision"] else None
-
-        # Loss function
+        self.scaler = GradScaler() if training_config["mixed_precision"] else None
         self.criterion = nn.MSELoss()
 
-        # Training state
-        self.current_epoch = 0
-        self.global_step = 0
-        self.best_loss = float("inf")
-
-        self._init_mlflow()
-
-    def _init_mlflow(self) -> None:
-        """Initialize MLflow tracking."""
+    def _init_mlflow(self):
+        """Initialize MLflow tracking"""
         mlflow.set_tracking_uri(self.config["mlflow"]["tracking_uri"])
         mlflow.set_experiment(self.config["experiment"]["name"])
+        logger.info(f"MLflow tracking URI: {self.config['mlflow']['tracking_uri']}")
+        logger.info(f"MLflow experiment: {self.config['experiment']['name']}")
 
-    def train_epoch(self, train_loader: DataLoader) -> float:
-        """
-        Train for one epoch.
-        Args:
-            train_loader: DataLoader for training data.
-        Returns:
-            Average epoch loss.
-        """
+    def train_epoch(self, train_loader: DataLoader, start_batch: int = 0) -> float:
+        """Train for one epoch."""
         self.diffusion_model.train()
         epoch_loss = 0.0
         num_batches = len(train_loader)
@@ -98,213 +101,177 @@ class StableDiffusionTrainer:
             desc=f"Epoch {self.current_epoch + 1}/{self.config['training']['epochs']}",
         )
 
-        for batch_idx, (images, prompts) in enumerate(progress_bar):
-            images = images.to(self.device)
+        progress_iter = iter(progress_bar)
+        for _ in range(start_batch):
+            try:
+                next(progress_iter)
+            except StopIteration:
+                break
 
-            # Encode images to latent space
-            with torch.no_grad():
-                latents = self.vae_encoder.encode(images)
+        for batch_idx, (images, prompts) in enumerate(progress_iter, start=start_batch):
+            loss = self._training_step(images, prompts)
+            epoch_loss += loss
 
-            # Sample random timesteps
-            timesteps = torch.randint(
-                0,
-                self.scheduler.total_train_timesteps,
-                (latents.shape[0],),
-                device=self.device,
-            )
-
-            # Add noise to latents
-            noisy_latents, noise = self.scheduler.add_noise(latents, timesteps)
-
-            # Encode text
-            with torch.no_grad():
-                text_embeddings = self.text_encoder(prompts)
-
-            # Forward pass with mixed precision
-            if self.scaler:
-                with autocast("cuda", dtype=torch.float16):
-                    noise_pred = self.diffusion_model(
-                        noisy_latents, text_embeddings, timesteps
-                    )
-                    loss = self.criterion(noise_pred, noise)
-            else:
-                noise_pred = self.diffusion_model(
-                    noisy_latents, text_embeddings, timesteps
-                )
-                loss = self.criterion(noise_pred, noise)
-
-            # Backward pass
-            self.optimizer.zero_grad()
-
-            if self.scaler:
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-            else:
-                loss.backward()
-                self.optimizer.step()
-
-            # Update progress
-            batch_loss = loss.item()
-            epoch_loss += batch_loss
-            self.global_step += 1
-
-            # Log to MLflow
+            # Log metrics
             if self.global_step % self.config["experiment"]["log_every"] == 0:
                 mlflow.log_metrics(
                     {
-                        "train_loss": batch_loss,
+                        "train_loss": loss,
                         "learning_rate": self.optimizer.param_groups[0]["lr"],
-                        "epoch": self.current_epoch,
+                        "epoch": self.current_epoch + 1,
                         "step": self.global_step,
                     },
                     step=self.global_step,
                 )
 
-            # Save checkpoint (local file, for resuming training)
+            # Save checkpoint
             if self.global_step % self.config["experiment"]["save_every"] == 0:
-                save_checkpoint(
-                    self.diffusion_model,
-                    self.optimizer,
-                    self.lr_scheduler,
-                    self.current_epoch,
-                    batch_loss,
-                    os.path.join(
-                        self.config["experiment"]["save_dir"],
-                        f"checkpoint_epoch_{self.current_epoch + 1}_step_{self.global_step}.pt",
-                    ),
-                    self.scaler,
+                self.checkpoint_manager.save_checkpoint(
+                    model=self.diffusion_model,
+                    optimizer=self.optimizer,
+                    lr_scheduler=self.lr_scheduler,
+                    epoch=self.current_epoch,
                     global_step=self.global_step,
                     best_loss=self.best_loss,
-                    max_checkpoints=self.config["experiment"].get("max_checkpoints", 1),
+                    scaler=self.scaler,
+                    batch_idx=batch_idx + 1,  # Save next batch index
                 )
 
-            # Update progress bar
             progress_bar.set_postfix(
                 {
-                    "loss": f"{batch_loss:.5f}",
+                    "batch_loss": f"{loss:.5f}",
                     "lr": f"{self.optimizer.param_groups[0]['lr']:.6f}",
                 }
             )
 
-        return epoch_loss / num_batches
+        return epoch_loss / num_batches if num_batches > 0 else 0.0
+
+    def _training_step(self, images: torch.Tensor, prompts: list) -> float:
+        """Single training step"""
+        images = images.to(self.device)
+
+        # Encode to latent space
+        with torch.no_grad():
+            latents = self.vae_encoder.encode(images)
+            text_embeddings = self.text_encoder(prompts)
+
+        # Sample timesteps and add noise
+        timesteps = torch.randint(
+            0,
+            self.scheduler.total_train_timesteps,
+            (latents.shape[0],),
+            device=self.device,
+        )
+        noisy_latents, noise = self.scheduler.add_noise(latents, timesteps)
+
+        # Forward pass
+        if self.scaler:
+            with autocast("cuda", dtype=torch.float16):
+                noise_pred = self.diffusion_model(
+                    noisy_latents, text_embeddings, timesteps
+                )
+                loss = self.criterion(noise_pred, noise)
+        else:
+            noise_pred = self.diffusion_model(noisy_latents, text_embeddings, timesteps)
+            loss = self.criterion(noise_pred, noise)
+
+        # Backward pass
+        self.optimizer.zero_grad()
+        if self.scaler:
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            loss.backward()
+            self.optimizer.step()
+
+        self.global_step += 1
+        return loss.item()
 
     def validate(self, val_loader: DataLoader) -> float:
-        """
-        Validate the model.
-        Args:
-            val_loader: DataLoader for validation data.
-        Returns:
-            Average validation loss.
-        """
+        """Validate the model"""
         self.diffusion_model.eval()
         val_loss = 0.0
-        num_batches = len(val_loader)
 
         with torch.no_grad():
-            for images, prompts in tqdm(val_loader, desc="Validation"):
+            for images, prompts in tqdm(val_loader, desc="Validation", leave=False):
                 images = images.to(self.device)
 
-                # Encode images to latent space
                 latents = self.vae_encoder.encode(images)
+                text_embeddings = self.text_encoder(prompts)
 
-                # Sample random timesteps
                 timesteps = torch.randint(
                     0,
                     self.scheduler.total_train_timesteps,
                     (latents.shape[0],),
                     device=self.device,
                 )
-
-                # Add noise to latents
                 noisy_latents, noise = self.scheduler.add_noise(latents, timesteps)
 
-                # Encode text
-                text_embeddings = self.text_encoder(prompts)
-
-                # Forward pass
                 noise_pred = self.diffusion_model(
                     noisy_latents, text_embeddings, timesteps
                 )
                 loss = self.criterion(noise_pred, noise)
-
                 val_loss += loss.item()
 
-        return val_loss / num_batches
+        return val_loss / len(val_loader)
 
-    def train(
-        self, train_loader: DataLoader, val_loader: Optional[DataLoader] = None
-    ) -> None:
+    def load_checkpoint(self, filepath: str) -> None:
         """
-        Run the full training loop.
+        Load model, optimizer, scheduler, scaler, and training state from checkpoint for resume training.
         Args:
-            train_loader: DataLoader for training data.
-            val_loader: DataLoader for validation data (optional).
+            filepath: Path to checkpoint file.
         """
+        checkpoint = self.checkpoint_manager.load_checkpoint(
+            filepath,
+            self.diffusion_model,
+            self.optimizer,
+            self.lr_scheduler,
+            self.scaler,
+            device=self.device,
+        )
+        self.current_epoch = checkpoint.get("epoch", 0)
+        self.best_loss = checkpoint.get("best_loss", float("inf"))
+        self.global_step = checkpoint.get("global_step", 0)
+        self.resume_batch_idx = checkpoint.get("batch_idx", 0)
         logger.info(
-            f"Starting training for {self.config['training']['epochs']} epochs..."
+            f"Checkpoint loaded: epoch={self.current_epoch}, global_step={self.global_step}, best_loss={self.best_loss}, batch_idx={self.resume_batch_idx}"
         )
 
-        with mlflow.start_run(run_name=f"{self.config['experiment']['name']}_run"):
-            for epoch in range(self.current_epoch, self.config["training"]["epochs"]):
-                self.current_epoch = epoch
+    def save_model(self, is_best: bool = False, is_final: bool = False) -> None:
+        """Save model to registry"""
+        signature = self._create_model_signature()
 
-                # Train epoch
-                train_loss = self.train_epoch(train_loader)
+        tags = {
+            "epoch": str(self.current_epoch + 1),
+            "step": str(self.global_step),
+            "best_loss": str(self.best_loss),
+        }
+        if is_best:
+            tags.update({"model_type": "best"})
+        if is_final:
+            tags.update({"model_type": "final"})
 
-                # Validation
-                if (
-                    val_loader
-                    and epoch % self.config["experiment"]["validate_every"] == 0
-                ):
-                    val_loss = self.validate(val_loader)
+        alias = "candidate"
+        if is_best:
+            alias = "challenger"
+        elif is_final:
+            alias = "champion"
 
-                    # Log validation metrics
-                    mlflow.log_metrics(
-                        {
-                            "val_loss": val_loss,
-                            "train_epoch_loss": train_loss,
-                        },
-                        step=epoch,
-                    )
+        try:
+            version = self.model_registry.register_model(
+                model=self.diffusion_model,
+                model_name=self.config["experiment"]["model_name"],
+                signature=signature,
+                tags=tags,
+                alias=alias,
+            )
+            logger.info(f"Registered model version {version} with alias '{alias}'")
+        except Exception as e:
+            logger.error(f"Failed to save model to MLflow: {e}")
 
-                    # Save best model to registry
-                    if val_loss < self.best_loss:
-                        self.best_loss = val_loss
-                        self.save_model_to_registry(is_best=True)
-
-                    print(
-                        f"Epoch {epoch + 1}: Train Loss: {train_loss:.5f}, Val Loss: {val_loss:.5f}"
-                    )
-                else:
-                    mlflow.log_metrics(
-                        {
-                            "train_epoch_loss": train_loss,
-                        },
-                        step=epoch,
-                    )
-                    print(f"Epoch {epoch + 1}: Train Loss: {train_loss:.5f}")
-
-                # Update learning rate
-                self.lr_scheduler.step()
-
-            # Log final model
-            self.save_model_to_registry(is_final=True)
-
-        logger.info("Training completed!")
-
-    def save_model_to_registry(
-        self, is_best: bool = False, is_final: bool = False
-    ) -> None:
-        """
-        Save model to MLflow registry with versioning and optionally delete local checkpoint.
-        Args:
-            is_best: Whether this is the best model so far.
-            is_final: Whether this is the final model.
-        """
-        model_name = self.config["experiment"]["model_name"]
-
-        # Create model signature
+    def _create_model_signature(self):
+        """Create MLflow model signature"""
         sample_input = torch.randn(1, 4, 4, 4).to(self.device)
         sample_context = torch.randn(1, 77, 512).to(self.device)
         sample_time = torch.randint(0, 1000, (1,)).to(self.device)
@@ -314,7 +281,7 @@ class StableDiffusionTrainer:
                 sample_input, sample_context, sample_time
             )
 
-        signature = mlflow.models.infer_signature(
+        return mlflow.models.infer_signature(
             {
                 "latent": sample_input.cpu().numpy(),
                 "context": sample_context.cpu().numpy(),
@@ -323,64 +290,95 @@ class StableDiffusionTrainer:
             sample_output.cpu().numpy(),
         )
 
-        mlflow.pytorch.log_model(
-            pytorch_model=self.diffusion_model,
-            artifact_path="stable_diffusion_model",
-            signature=signature,
-            registered_model_name=model_name,
-        )
-
-        if self.config["experiment"].get("delete_after_mlflow", False):
-            save_dir = self.config["experiment"]["save_dir"]
-            from ..utils.checkpoint import delete_file
-
-            checkpoints = [f for f in os.listdir(save_dir) if f.endswith(".pt")]
-            if checkpoints:
-                checkpoints = sorted(
-                    checkpoints,
-                    key=lambda x: os.path.getmtime(os.path.join(save_dir, x)),
-                )
-                latest_ckpt = os.path.join(save_dir, checkpoints[-1])
-                delete_file(latest_ckpt)
-
-        tags = {"epoch": str(self.current_epoch + 1), "step": str(self.global_step)}
-        if is_best:
-            tags.update({"stage": "best", "validation_loss": str(self.best_loss)})
-        if is_final:
-            tags.update({"stage": "final"})
-
-        client = mlflow.tracking.MlflowClient()
-        model_version = client.get_latest_versions(model_name)[0]
-
-        for key, value in tags.items():
-            client.set_model_version_tag(model_name, model_version.version, key, value)
-
-        if is_best:
-            client.transition_model_version_stage(
-                model_name, model_version.version, "Staging"
-            )
-        if is_final:
-            client.transition_model_version_stage(
-                model_name, model_version.version, "Production"
-            )
-
-    def load_checkpoint(self, filepath: str) -> None:
-        """
-        Load model, optimizer, scheduler, scaler, and training state from checkpoint for resume training.
-        Args:
-            filepath: Path to checkpoint file.
-        """
-        checkpoint = load_checkpoint(
-            filepath,
-            self.diffusion_model,
-            self.optimizer,
-            self.lr_scheduler,
-            self.scaler,
-            device=self.device,
-        )
-        self.current_epoch = checkpoint.get("epoch", 0) + 1
-        self.best_loss = checkpoint.get("best_loss", float("inf"))
-        self.global_step = checkpoint.get("global_step", 0)
+    def train(self, train_loader: DataLoader, val_loader: Any = None) -> None:
+        """Run the full training loop"""
         logger.info(
-            f"Checkpoint loaded: epoch={self.current_epoch}, global_step={self.global_step}, best_loss={self.best_loss}"
+            f"Starting training for {self.config['training']['epochs']} epochs..."
         )
+
+        with mlflow.start_run(run_name=f"{self.config['experiment']['name']}_run"):
+            try:
+                mlflow.log_params(
+                    {
+                        "learning_rate": self.config["training"]["learning_rate"],
+                        "epochs": self.config["training"]["epochs"],
+                        "batch_size": self.config["training"].get(
+                            "batch_size", "unknown"
+                        ),
+                        "mixed_precision": self.config["training"]["mixed_precision"],
+                        "weight_decay": self.config["training"].get(
+                            "weight_decay", 0.01
+                        ),
+                        "eta_min": self.config["training"]["eta_min"],
+                        "model_h_dim": self.config["model"]["stable_diffusion"][
+                            "h_dim"
+                        ],
+                        "model_n_head": self.config["model"]["stable_diffusion"][
+                            "n_head"
+                        ],
+                        "num_train_timesteps": self.config["model"]["stable_diffusion"][
+                            "num_train_timesteps"
+                        ],
+                        "beta_start": self.config["model"]["stable_diffusion"][
+                            "beta_start"
+                        ],
+                        "beta_end": self.config["model"]["stable_diffusion"][
+                            "beta_end"
+                        ],
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log MLflow parameters: {e}")
+
+            batches_per_epoch = len(train_loader)
+            start_epoch = self.current_epoch
+            start_batch = getattr(self, "resume_batch_idx", 0)
+
+            self.config["training"]["epochs"]
+            logger.info(
+                f"Resuming from epoch {start_epoch + 1}, batch {start_batch + 1}/{batches_per_epoch}, step {self.global_step}"
+            )
+
+            for epoch in range(self.current_epoch, self.config["training"]["epochs"]):
+                self.current_epoch = epoch
+
+                if epoch == start_epoch:
+                    train_loss = self.train_epoch(train_loader, start_batch=start_batch)
+                else:
+                    train_loss = self.train_epoch(train_loader, start_batch=0)
+                self.resume_batch_idx = 0
+
+                if val_loader:
+                    val_loss = self.validate(val_loader)
+
+                    try:
+                        mlflow.log_metrics(
+                            {
+                                "val_loss": val_loss,
+                                "train_epoch_loss": train_loss,
+                            },
+                            step=epoch,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to log validation metrics: {e}")
+
+                    if val_loss < self.best_loss:
+                        self.best_loss = val_loss
+                        self.save_model(is_best=True)
+                        logger.info(f"New best model! Validation loss: {val_loss:.5f}")
+
+                    logger.info(
+                        f"Epoch {epoch + 1}: Train Loss: {train_loss:.5f}, Val Loss: {val_loss:.5f}"
+                    )
+                else:
+                    try:
+                        mlflow.log_metrics({"train_epoch_loss": train_loss}, step=epoch)
+                    except Exception as e:
+                        logger.warning(f"Failed to log training metrics: {e}")
+                    logger.info(f"Epoch {epoch + 1}: Train Loss: {train_loss:.5f}")
+
+                self.lr_scheduler.step()
+
+            self.save_model(is_final=True)
+
+        logger.info("Training completed!")

@@ -1,6 +1,10 @@
 import subprocess
 import sys
 
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def start_mlflow_server():
     """Start MLflow tracking server"""
@@ -19,7 +23,7 @@ def start_mlflow_server():
         "5000",
     ]
 
-    print("Starting MLflow server...")
+    logger.info("Starting MLflow server...")
     subprocess.run(cmd)
 
 
