@@ -9,6 +9,18 @@ from .logging import get_logger
 logger = get_logger(__name__)
 
 
+def load_checkpoint_file(filepath, map_location=None):
+    """Load a checkpoint file robustly, handling dict, state_dict, and model object cases."""
+    checkpoint = torch.load(filepath, map_location=map_location, weights_only=False)
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        return checkpoint
+    if isinstance(checkpoint, dict):
+        return {"model_state_dict": checkpoint}
+    if hasattr(checkpoint, "state_dict"):
+        return {"model_state_dict": checkpoint.state_dict()}
+    raise RuntimeError(f"Unsupported checkpoint type: {type(checkpoint)}")
+
+
 class CheckpointManager:
     """Manages model checkpoints with automatic cleanup and versioning."""
 
@@ -101,37 +113,19 @@ class CheckpointManager:
         device: str = "cuda",
         strict: bool = True,
     ) -> dict[str, Any]:
-        """Load checkpoint and restore training state.
-
-        Args:
-            filepath: Path to checkpoint file
-            model: Model to load state into
-            optimizer: Optimizer to load state into (optional)
-            lr_scheduler: Learning rate scheduler to load state into (optional)
-            scaler: Mixed precision scaler to load state into (optional)
-            device: Device to map tensors to
-            strict: Whether to strictly enforce that the keys match
-
-        Returns:
-            Checkpoint dictionary with metadata
-
-        Raises:
-            FileNotFoundError: If checkpoint file doesn't exist
-            RuntimeError: If checkpoint loading fails
-        """
+        """Load checkpoint and restore training state."""
         filepath = Path(filepath)
 
         if not filepath.exists():
             raise FileNotFoundError(f"Checkpoint not found: {filepath}")
 
         try:
-            checkpoint = torch.load(filepath, map_location=device)
+            checkpoint = load_checkpoint_file(filepath, map_location=device)
         except Exception as e:
             raise RuntimeError(f"Failed to load checkpoint {filepath}: {e}") from e
 
         # Load model state
-        if "model_state_dict" in checkpoint:
-            model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
+        model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
         # Load optimizer state
         if optimizer is not None and "optimizer_state_dict" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])

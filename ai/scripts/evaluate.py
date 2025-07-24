@@ -177,7 +177,7 @@ def main():
             _, val_loader = create_data_loaders(config)
 
             logger.info("Initializing trainer...")
-            trainer = StableDiffusionTrainer(config, args.device)
+            trainer = StableDiffusionTrainer(config, args.device, is_validation=True)
 
             logger.info(f"Loading model from: {args.model_path}")
             trainer.load_checkpoint(args.model_path)

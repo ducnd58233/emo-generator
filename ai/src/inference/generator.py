@@ -5,7 +5,6 @@ from PIL import Image
 from tqdm import tqdm
 
 from ..common.constants import (
-    DEFAULT_GUIDANCE_SCALE,
     DEFAULT_LATENT_CHANNELS,
     DEFAULT_LATENT_HEIGHT,
     DEFAULT_LATENT_WIDTH,
@@ -16,6 +15,7 @@ from ..models.encoders.clip import CLIPTextEncoder
 from ..models.encoders.vae import VAEEncoder
 from ..models.stable_diffusion.diffusion import StableDiffusion
 from ..models.stable_diffusion.scheduler import DDPMScheduler
+from ..utils.checkpoint import load_checkpoint_file
 from ..utils.image import tensor_to_pil
 from ..utils.logging import get_logger
 
@@ -76,12 +76,8 @@ class EmojiGenerator:
             beta_end=model_config["stable_diffusion"]["beta_end"],
         )
 
-        # Load checkpoint
-        checkpoint = torch.load(model_path, map_location=device)
-        if "model_state_dict" in checkpoint:
-            diffusion_model.load_state_dict(checkpoint["model_state_dict"])
-        else:
-            diffusion_model.load_state_dict(checkpoint)
+        checkpoint = load_checkpoint_file(model_path, map_location=device)
+        diffusion_model.load_state_dict(checkpoint["model_state_dict"])
 
         logger.info("Loaded model weights from checkpoint")
 
@@ -103,7 +99,6 @@ class EmojiGenerator:
         latent_height: int = DEFAULT_LATENT_HEIGHT,
         latent_width: int = DEFAULT_LATENT_WIDTH,
         seed: int = DEFAULT_SEED,
-        guidance_scale: float = DEFAULT_GUIDANCE_SCALE,
     ) -> Image.Image:
         """Generate emoji image from text prompt"""
 

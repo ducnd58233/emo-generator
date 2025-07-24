@@ -33,6 +33,7 @@ class StableDiffusionTrainer:
         self,
         config: dict[str, dict[str, str | int | float | bool]],
         device: str = "cuda",
+        is_validation: bool = False,
     ):
         self.config = config
         self.device = device
@@ -50,7 +51,8 @@ class StableDiffusionTrainer:
             max_checkpoints=config["experiment"]["max_checkpoints"],
         )
 
-        self._init_mlflow()
+        if not is_validation:
+            self._init_mlflow()
 
     def _init_models(self) -> None:
         """Initialize all models"""

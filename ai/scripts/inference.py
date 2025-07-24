@@ -10,7 +10,6 @@ from src.utils.config import load_config
 from src.utils.logging import get_logger
 
 from ai.src.common.constants import (
-    DEFAULT_GUIDANCE_SCALE,
     DEFAULT_LATENT_HEIGHT,
     DEFAULT_LATENT_WIDTH,
     DEFAULT_NUM_INFERENCE_STEPS,
@@ -64,12 +63,6 @@ def main() -> None:
         "--seed", type=int, default=DEFAULT_SEED, help="Random seed for generation"
     )
     parser.add_argument(
-        "--guidance_scale",
-        type=float,
-        default=DEFAULT_GUIDANCE_SCALE,
-        help="Guidance scale for classifier-free guidance",
-    )
-    parser.add_argument(
         "--output_dir",
         type=str,
         default="outputs",
@@ -113,7 +106,6 @@ def main() -> None:
                     latent_height=args.latent_height,
                     latent_width=args.latent_width,
                     seed=seed,
-                    guidance_scale=args.guidance_scale,
                 )
 
                 # Generate filename
