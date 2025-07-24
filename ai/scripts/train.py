@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 from src.data.data_loaders import create_data_loaders
 from src.training.trainer import StableDiffusionTrainer
@@ -15,23 +16,35 @@ sys.path.append(str(Path(__file__).parent.parent))
 logger = get_logger(__name__)
 
 
-def find_latest_checkpoint(save_dir: str) -> Optional[str]:
-    """
-    Find the latest checkpoint file in a directory.
+def find_latest_checkpoint(save_dir: str) -> str | None:
+    """Find the latest checkpoint in the save directory.
+
     Args:
-        save_dir: Directory to search.
+        save_dir: Directory to search for checkpoints
+
     Returns:
-        Path to latest checkpoint or None.
+        Path to latest checkpoint or None if not found
     """
-    if not os.path.isdir(save_dir):
+    if not os.path.exists(save_dir):
         return None
-    checkpoints = [f for f in os.listdir(save_dir) if f.endswith(".pt")]
+
+    checkpoints = [
+        f
+        for f in os.listdir(save_dir)
+        if f.startswith("checkpoint_") and f.endswith(".pt")
+    ]
+
     if not checkpoints:
         return None
-    checkpoints = sorted(
-        checkpoints, key=lambda x: os.path.getmtime(os.path.join(save_dir, x))
+
+    # Sort by modification time to get the latest
+    checkpoints.sort(
+        key=lambda x: os.path.getmtime(os.path.join(save_dir, x)), reverse=True
     )
-    return os.path.join(save_dir, checkpoints[-1])
+
+    latest_path = os.path.join(save_dir, checkpoints[0])
+    logger.info(f"Found latest checkpoint: {latest_path}")
+    return latest_path
 
 
 def main() -> None:
@@ -79,13 +92,10 @@ def main() -> None:
     resume_path = args.resume or find_latest_checkpoint(
         config["experiment"]["save_dir"]
     )
-    if resume_path:
-        try:
-            logger.info(f"Resuming from checkpoint: {resume_path}")
-            trainer.load_checkpoint(resume_path)
-        except Exception as e:
-            logger.error(f"Failed to load checkpoint '{resume_path}': {e}")
-            logger.warning("Starting training from scratch due to checkpoint error.")
+
+    if resume_path and os.path.exists(resume_path):
+        logger.info(f"Resuming training from: {resume_path}")
+        trainer.load_checkpoint(resume_path)
     else:
         logger.info("No checkpoint found, starting training from scratch.")
     trainer.train(train_loader, val_loader)

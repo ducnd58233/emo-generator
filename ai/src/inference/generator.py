@@ -1,9 +1,17 @@
-from typing import Any, Dict
+from __future__ import annotations
 
 import torch
 from PIL import Image
 from tqdm import tqdm
 
+from ..common.constants import (
+    DEFAULT_GUIDANCE_SCALE,
+    DEFAULT_LATENT_CHANNELS,
+    DEFAULT_LATENT_HEIGHT,
+    DEFAULT_LATENT_WIDTH,
+    DEFAULT_NUM_INFERENCE_STEPS,
+    DEFAULT_SEED,
+)
 from ..models.encoders.clip import CLIPTextEncoder
 from ..models.encoders.vae import VAEEncoder
 from ..models.stable_diffusion.diffusion import StableDiffusion
@@ -38,8 +46,11 @@ class EmojiGenerator:
 
     @classmethod
     def from_pretrained(
-        cls, model_path: str, config: Dict[str, Any], device: str = "cuda"
-    ) -> "EmojiGenerator":
+        cls,
+        model_path: str,
+        config: dict[str, dict[str, str | int | float]],
+        device: str = "cuda",
+    ) -> EmojiGenerator:
         """Load generator from pretrained checkpoint"""
         logger.info("Loading EmojiGenerator from checkpoint...")
 
@@ -88,11 +99,11 @@ class EmojiGenerator:
     def generate(
         self,
         prompt: str,
-        num_inference_steps: int = 50,
-        latent_height: int = 4,
-        latent_width: int = 4,
-        seed: int = 42,
-        guidance_scale: float = 7.5,
+        num_inference_steps: int = DEFAULT_NUM_INFERENCE_STEPS,
+        latent_height: int = DEFAULT_LATENT_HEIGHT,
+        latent_width: int = DEFAULT_LATENT_WIDTH,
+        seed: int = DEFAULT_SEED,
+        guidance_scale: float = DEFAULT_GUIDANCE_SCALE,
     ) -> Image.Image:
         """Generate emoji image from text prompt"""
 
@@ -106,7 +117,7 @@ class EmojiGenerator:
 
             # Create initial noise
             latents = torch.randn(
-                (1, 4, latent_height, latent_width),
+                (1, DEFAULT_LATENT_CHANNELS, latent_height, latent_width),
                 device=self.device,
                 dtype=torch.float32,
             )
@@ -140,20 +151,24 @@ class EmojiGenerator:
     def generate_batch(
         self,
         prompts: list[str],
-        num_inference_steps: int = 50,
-        latent_height: int = 4,
-        latent_width: int = 4,
-        seed: int = 42,
+        num_inference_steps: int = DEFAULT_NUM_INFERENCE_STEPS,
+        latent_height: int = DEFAULT_LATENT_HEIGHT,
+        latent_width: int = DEFAULT_LATENT_WIDTH,
+        seed: int = DEFAULT_SEED,
     ) -> list[Image.Image]:
-        """Generate multiple emoji images from text prompts"""
+        """Generate multiple emoji images from a list of prompts"""
+
         images = []
         for i, prompt in enumerate(prompts):
+            # Use different seed for each image
+            image_seed = seed + i
             image = self.generate(
                 prompt=prompt,
                 num_inference_steps=num_inference_steps,
                 latent_height=latent_height,
                 latent_width=latent_width,
-                seed=seed + i,
+                seed=image_seed,
             )
             images.append(image)
+
         return images

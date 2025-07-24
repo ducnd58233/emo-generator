@@ -5,7 +5,7 @@ datasets/**
 outputs/**
 mlruns/
 models/**
-mlflow.db
+mlflow.db*
 
 ### Linux ###
 *~

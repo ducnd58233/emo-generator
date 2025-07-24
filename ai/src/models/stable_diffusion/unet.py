@@ -2,121 +2,133 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ...common.constants import (
+    DEFAULT_CONTEXT_DIM,
+    DEFAULT_LATENT_CHANNELS,
+    DEFAULT_TIME_DIM,
+    GROUPNORM_GROUPS,
+    TIME_EMBEDDING_MULTIPLIER,
+)
 from .attention import CrossAttention, SelfAttention
 
 
 class TimeEmbedding(nn.Module):
+    """Time embedding layer for diffusion timesteps."""
+
     def __init__(self, n_embd: int):
         super().__init__()
-        self.proj1 = nn.Linear(n_embd, 4 * n_embd)
-        self.proj2 = nn.Linear(4 * n_embd, 4 * n_embd)
+        self.proj1 = nn.Linear(n_embd, TIME_EMBEDDING_MULTIPLIER * n_embd)
+        self.proj2 = nn.Linear(
+            TIME_EMBEDDING_MULTIPLIER * n_embd, TIME_EMBEDDING_MULTIPLIER * n_embd
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.proj1(x)
-        x = F.silu(x)
-        x = self.proj2(x)
-        return x
+        x = F.silu(self.proj1(x))
+        return self.proj2(x)
 
 
 class UNETResidualBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, time_dim: int = 1280):
+    """Residual block with time embedding integration."""
+
+    def __init__(
+        self, in_channels: int, out_channels: int, time_dim: int = DEFAULT_TIME_DIM
+    ):
         super().__init__()
-        self.gn_feature = nn.GroupNorm(32, in_channels)
+        self.gn_feature = nn.GroupNorm(GROUPNORM_GROUPS, in_channels)
         self.conv_feature = nn.Conv2d(
             in_channels, out_channels, kernel_size=3, padding=1
         )
         self.time_embedding_proj = nn.Linear(time_dim, out_channels)
 
-        self.gn_merged = nn.GroupNorm(32, out_channels)
+        self.gn_merged = nn.GroupNorm(GROUPNORM_GROUPS, out_channels)
         self.conv_merged = nn.Conv2d(
             out_channels, out_channels, kernel_size=3, padding=1
         )
 
-        if in_channels == out_channels:
-            self.residual_connection = nn.Identity()
-        else:
-            self.residual_connection = nn.Conv2d(
-                in_channels, out_channels, kernel_size=1, padding=0
-            )
+        self.residual_connection = (
+            nn.Identity()
+            if in_channels == out_channels
+            else nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        )
 
     def forward(
         self, input_feature: torch.Tensor, time_emb: torch.Tensor
     ) -> torch.Tensor:
         residual = input_feature
 
-        h = self.gn_feature(input_feature)
-        h = F.silu(h)
+        h = F.silu(self.gn_feature(input_feature))
         h = self.conv_feature(h)
 
         time_emb_processed = F.silu(time_emb)
-        time_emb_projected = self.time_embedding_proj(time_emb_processed)
-        time_emb_projected = time_emb_projected.unsqueeze(-1).unsqueeze(-1)
+        time_emb_projected = (
+            self.time_embedding_proj(time_emb_processed).unsqueeze(-1).unsqueeze(-1)
+        )
 
         merged_feature = h + time_emb_projected
-        merged_feature = self.gn_merged(merged_feature)
-        merged_feature = F.silu(merged_feature)
+        merged_feature = F.silu(self.gn_merged(merged_feature))
         merged_feature = self.conv_merged(merged_feature)
 
         return merged_feature + self.residual_connection(residual)
 
 
 class UNETAttentionBlock(nn.Module):
-    def __init__(self, num_heads: int, head_dim: int, context_dim: int = 512):
+    """Attention block with self-attention, cross-attention, and feed-forward."""
+
+    def __init__(
+        self, num_heads: int, head_dim: int, context_dim: int = DEFAULT_CONTEXT_DIM
+    ):
         super().__init__()
         embed_dim = num_heads * head_dim
 
-        self.gn_in = nn.GroupNorm(32, embed_dim, eps=1e-6)
-        self.proj_in = nn.Conv2d(embed_dim, embed_dim, kernel_size=1, padding=0)
+        # Input projection
+        self.gn_in = nn.GroupNorm(GROUPNORM_GROUPS, embed_dim, eps=1e-6)
+        self.proj_in = nn.Conv2d(embed_dim, embed_dim, kernel_size=1)
 
+        # Attention layers
         self.ln_1 = nn.LayerNorm(embed_dim)
         self.attn_1 = SelfAttention(num_heads, embed_dim, in_proj_bias=False)
+
         self.ln_2 = nn.LayerNorm(embed_dim)
         self.attn_2 = CrossAttention(
             num_heads, embed_dim, context_dim, in_proj_bias=False
         )
-        self.ln_3 = nn.LayerNorm(embed_dim)
 
-        self.ffn_geglu = nn.Linear(embed_dim, 4 * embed_dim * 2)
-        self.ffn_out = nn.Linear(4 * embed_dim, embed_dim)
-        self.proj_out = nn.Conv2d(embed_dim, embed_dim, kernel_size=1, padding=0)
+        # Feed-forward network
+        self.ln_3 = nn.LayerNorm(embed_dim)
+        self.ffn_geglu = nn.Linear(embed_dim, TIME_EMBEDDING_MULTIPLIER * embed_dim * 2)
+        self.ffn_out = nn.Linear(TIME_EMBEDDING_MULTIPLIER * embed_dim, embed_dim)
+
+        # Output projection
+        self.proj_out = nn.Conv2d(embed_dim, embed_dim, kernel_size=1)
 
     def forward(
         self, input_tensor: torch.Tensor, context_tensor: torch.Tensor
     ) -> torch.Tensor:
         skip_connection = input_tensor
-
         B, C, H, W = input_tensor.shape
-        HW = H * W
 
-        h = self.gn_in(input_tensor)
-        h = self.proj_in(h)
-        h = h.view(B, C, HW).transpose(-1, -2)
+        # Prepare input for attention
+        h = self.proj_in(self.gn_in(input_tensor))
+        h = h.view(B, C, H * W).transpose(-1, -2)
 
-        # Self-attention
-        attn1_skip = h
-        h = self.ln_1(h)
-        h = self.attn_1(h)
-        h = h + attn1_skip
+        # Self-attention with residual
+        h = h + self.attn_1(self.ln_1(h))
 
-        # Cross-attention
-        attn2_skip = h
-        h = self.ln_2(h)
-        h = self.attn_2(h, context_tensor)
-        h = h + attn2_skip
+        # Cross-attention with residual
+        h = h + self.attn_2(self.ln_2(h), context_tensor)
 
-        # Feed-forward
-        ffn_skip = h
+        h_residual = h
         h = self.ln_3(h)
         intermediate, gate = self.ffn_geglu(h).chunk(2, dim=-1)
-        h = intermediate * F.gelu(gate)
-        h = self.ffn_out(h)
-        h = h + ffn_skip
+        h = self.ffn_out(intermediate * F.gelu(gate)) + h_residual
 
         h = h.transpose(-1, -2).view(B, C, H, W)
         return self.proj_out(h) + skip_connection
 
 
 class Upsample(nn.Module):
+    """Upsampling layer with nearest neighbor interpolation."""
+
     def __init__(self, num_channels: int):
         super().__init__()
         self.conv = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
@@ -127,6 +139,8 @@ class Upsample(nn.Module):
 
 
 class Downsample(nn.Module):
+    """Downsampling layer with strided convolution."""
+
     def __init__(self, num_channels: int):
         super().__init__()
         self.conv = nn.Conv2d(
@@ -138,6 +152,8 @@ class Downsample(nn.Module):
 
 
 class SwitchSequential(nn.Sequential):
+    """Sequential module that routes inputs based on layer type."""
+
     def forward(
         self,
         x: torch.Tensor,
@@ -145,59 +161,66 @@ class SwitchSequential(nn.Sequential):
         time_embedding: torch.Tensor,
     ) -> torch.Tensor:
         for module in self:
-            if isinstance(module, UNETAttentionBlock):
-                x = module(x, guidance_context)
-            elif isinstance(module, UNETResidualBlock):
-                x = module(x, time_embedding)
-            else:
-                x = module(x)
+            match module:
+                case UNETAttentionBlock():
+                    x = module(x, guidance_context)
+                case UNETResidualBlock():
+                    x = module(x, time_embedding)
+                case _:
+                    x = module(x)
         return x
 
 
 class UNET(nn.Module):
-    def __init__(self, h_dim: int = 384, n_head: int = 8, time_dim: int = 1280):
+    """U-Net architecture for diffusion models."""
+
+    def __init__(
+        self, h_dim: int = 384, n_head: int = 8, time_dim: int = DEFAULT_TIME_DIM
+    ):
         super().__init__()
+        head_dim = h_dim // n_head
 
-        self.conv_in = nn.Conv2d(4, h_dim, kernel_size=3, padding=1)
+        self.conv_in = nn.Conv2d(
+            DEFAULT_LATENT_CHANNELS, h_dim, kernel_size=3, padding=1
+        )
 
+        # Encoder path
         self.down_blocks = nn.ModuleList(
             [
                 SwitchSequential(
                     UNETResidualBlock(h_dim, h_dim, time_dim),
-                    UNETAttentionBlock(n_head, h_dim // n_head),
+                    UNETAttentionBlock(n_head, head_dim),
                     UNETResidualBlock(h_dim, h_dim, time_dim),
-                ),
+                )
             ]
         )
 
         # Bottleneck
         self.bottleneck = SwitchSequential(
             UNETResidualBlock(h_dim, h_dim, time_dim),
-            UNETAttentionBlock(n_head, h_dim // n_head),
+            UNETAttentionBlock(n_head, head_dim),
             UNETResidualBlock(h_dim, h_dim, time_dim),
         )
 
-        # Decoder
+        # Decoder path
         self.up_blocks = nn.ModuleList(
             [
                 SwitchSequential(
                     UNETResidualBlock(h_dim * 2, h_dim, time_dim),
-                    UNETAttentionBlock(n_head, h_dim // n_head),
+                    UNETAttentionBlock(n_head, head_dim),
                     UNETResidualBlock(h_dim, h_dim, time_dim),
-                ),
+                )
             ]
         )
 
     def forward(
         self, latent: torch.Tensor, context: torch.Tensor, time: torch.Tensor
     ) -> torch.Tensor:
-        # Initial conv
+        # Initial convolution
         x = self.conv_in(latent)
-
-        # Store skip connections
         skip_connections = [x]
 
-        # Encoder
+        # Encoder path
         for down_block in self.down_blocks:
             x = down_block(x, context, time)
             skip_connections.append(x)
@@ -205,7 +228,7 @@ class UNET(nn.Module):
         # Bottleneck
         x = self.bottleneck(x, context, time)
 
-        # Decoder
+        # Decoder path
         for up_block in self.up_blocks:
             skip = skip_connections.pop()
             x = torch.cat([x, skip], dim=1)
@@ -215,12 +238,12 @@ class UNET(nn.Module):
 
 
 class UNETOutputLayer(nn.Module):
+    """Output layer for U-Net with normalization and activation."""
+
     def __init__(self, in_channels: int, out_channels: int):
         super().__init__()
-        self.gn = nn.GroupNorm(32, in_channels)
+        self.gn = nn.GroupNorm(GROUPNORM_GROUPS, in_channels)
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.gn(x)
-        x = F.silu(x)
-        return self.conv(x)
+        return self.conv(F.silu(self.gn(x)))

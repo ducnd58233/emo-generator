@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 import sys
@@ -7,12 +9,21 @@ from src.inference.generator import EmojiGenerator
 from src.utils.config import load_config
 from src.utils.logging import get_logger
 
+from ai.src.common.constants import (
+    DEFAULT_GUIDANCE_SCALE,
+    DEFAULT_LATENT_HEIGHT,
+    DEFAULT_LATENT_WIDTH,
+    DEFAULT_NUM_INFERENCE_STEPS,
+    DEFAULT_SEED,
+)
+
 sys.path.append(str(Path(__file__).parent.parent))
 
 logger = get_logger(__name__)
 
 
-def main():
+def main() -> None:
+    """Main inference function for generating emoji images."""
     parser = argparse.ArgumentParser(
         description="Generate Emojis with Stable Diffusion"
     )
@@ -32,16 +43,31 @@ def main():
         "--num_images", type=int, default=1, help="Number of images to generate"
     )
     parser.add_argument(
-        "--num_steps", type=int, default=50, help="Number of inference steps"
+        "--num_steps",
+        type=int,
+        default=DEFAULT_NUM_INFERENCE_STEPS,
+        help="Number of inference steps",
     )
     parser.add_argument(
-        "--latent_height", type=int, default=4, help="Height of latent space"
+        "--latent_height",
+        type=int,
+        default=DEFAULT_LATENT_HEIGHT,
+        help="Height of latent space",
     )
     parser.add_argument(
-        "--latent_width", type=int, default=4, help="Width of latent space"
+        "--latent_width",
+        type=int,
+        default=DEFAULT_LATENT_WIDTH,
+        help="Width of latent space",
     )
     parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for generation"
+        "--seed", type=int, default=DEFAULT_SEED, help="Random seed for generation"
+    )
+    parser.add_argument(
+        "--guidance_scale",
+        type=float,
+        default=DEFAULT_GUIDANCE_SCALE,
+        help="Guidance scale for classifier-free guidance",
     )
     parser.add_argument(
         "--output_dir",
@@ -56,23 +82,24 @@ def main():
     args = parser.parse_args()
 
     try:
-        # Load config
+        # Load configuration
         logger.info("Loading configuration...")
         config = load_config(args.config)
 
         # Create output directory
         os.makedirs(args.output_dir, exist_ok=True)
 
-        # Check if model exists
+        # Validate model path
         if not os.path.exists(args.model_path):
             raise FileNotFoundError(f"Model checkpoint not found: {args.model_path}")
 
+        # Load generator
         logger.info(f"Loading model from: {args.model_path}")
         generator = EmojiGenerator.from_pretrained(args.model_path, config, args.device)
 
         logger.info(f"Generating {args.num_images} images for prompt: '{args.prompt}'")
 
-        # Generate multiple images if requested
+        # Generate images
         for i in range(args.num_images):
             try:
                 logger.info(f"Generating image {i+1}/{args.num_images}...")
@@ -86,13 +113,15 @@ def main():
                     latent_height=args.latent_height,
                     latent_width=args.latent_width,
                     seed=seed,
+                    guidance_scale=args.guidance_scale,
                 )
 
-                # Save image
-                if args.num_images == 1:
-                    filename = f"emoji_seed_{seed}.png"
-                else:
-                    filename = f"emoji_{i+1}_seed_{seed}.png"
+                # Generate filename
+                filename = (
+                    f"emoji_seed_{seed}.png"
+                    if args.num_images == 1
+                    else f"emoji_{i+1}_seed_{seed}.png"
+                )
 
                 filepath = os.path.join(args.output_dir, filename)
                 image.save(filepath)
@@ -102,7 +131,7 @@ def main():
                 logger.error(f"Failed to generate image {i+1}: {e}")
                 continue
 
-        logger.info("Generation complete!")
+        logger.info("Generation completed successfully!")
 
     except Exception as e:
         logger.error(f"Generation failed: {e}")

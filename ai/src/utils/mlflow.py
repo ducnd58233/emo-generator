@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 import mlflow
 import mlflow.pytorch
@@ -39,13 +40,13 @@ class ModelRegistry:
 
     def register_model(
         self,
-        model: Any,
+        model,
         model_name: str,
-        signature: Optional[Any] = None,
-        tags: Optional[Dict[str, str]] = None,
+        signature=None,
+        tags: dict[str, str] | None = None,
         alias: str = "candidate",
     ) -> str:
-        """Register model in MLflow with modern alias approach"""
+        """Register model to MLflow Model Registry"""
         try:
             model_info = mlflow.pytorch.log_model(
                 pytorch_model=model,
@@ -54,102 +55,98 @@ class ModelRegistry:
                 registered_model_name=model_name,
             )
 
-            version = model_info.registered_model_version
-            logger.info(f"Registered model {model_name} version {version}")
+            # Get model version
+            model_version = model_info.registered_model_version
 
+            # Set alias for the model version
+            self.mlflow_client.set_registered_model_alias(
+                name=model_name,
+                alias=alias,
+                version=model_version,
+            )
+
+            # Add tags if provided
             if tags:
                 for key, value in tags.items():
                     self.mlflow_client.set_model_version_tag(
-                        model_name, version, key, value
+                        name=model_name,
+                        version=model_version,
+                        key=key,
+                        value=value,
                     )
 
-            if alias:
-                self.mlflow_client.set_registered_model_alias(
-                    model_name, alias, version
-                )
-                logger.info(
-                    f"Set alias '{alias}' for model {model_name} version {version}"
-                )
-
-            return version
+            logger.info(
+                f"Model registered: {model_name} v{model_version} with alias '{alias}'"
+            )
+            return model_version
 
         except Exception as e:
-            logger.error(f"Failed to register model {model_name}: {e}")
+            logger.error(f"Failed to register model: {e}")
             raise
 
-    def download_artifacts_from_registry(
+    def download_model_from_registry(
         self,
         model_name: str,
         alias: str = "champion",
-        dst_path: Optional[str] = "models/mlflow_registry",
-    ) -> str:
-        """Download model artifacts from MLflow registry using model alias"""
+        dst_path: str | None = "models/mlflow_registry",
+    ) -> Path:
+        """Download model from MLflow registry to local path"""
         try:
             model_uri = f"models:/{model_name}@{alias}"
-            logger.info(f"Downloading artifacts from URI: {model_uri}")
-            return mlflow.artifacts.download_artifacts(
+            downloaded_path = mlflow.artifacts.download_artifacts(
                 artifact_uri=model_uri, dst_path=dst_path
             )
+            logger.info(f"Model downloaded to: {downloaded_path}")
+            return Path(downloaded_path)
         except Exception as e:
-            logger.error(f"Failed to download artifacts for {model_name}@{alias}: {e}")
-            try:
-                latest_version = self.mlflow_client.get_latest_versions(model_name)[0]
-                model_uri = f"models:/{model_name}/{latest_version.version}"
-                logger.info(f"Fallback: Downloading artifacts from URI: {model_uri}")
-                return mlflow.artifacts.download_artifacts(
-                    artifact_uri=model_uri, dst_path=dst_path
-                )
-            except Exception as fallback_e:
-                logger.error(f"Fallback download failed: {fallback_e}")
-                raise fallback_e
+            logger.error(f"Failed to download model: {e}")
+            raise
+
+    def get_model_info(self, model_name: str, alias: str = "champion") -> dict:
+        """Get model information from registry"""
+        try:
+            model_version = self.mlflow_client.get_model_version_by_alias(
+                name=model_name, alias=alias
+            )
+            return {
+                "name": model_version.name,
+                "version": model_version.version,
+                "alias": alias,
+                "run_id": model_version.run_id,
+                "status": model_version.status,
+                "creation_timestamp": model_version.creation_timestamp,
+                "last_updated_timestamp": model_version.last_updated_timestamp,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get model info: {e}")
+            raise
 
     def upload_to_huggingface(
         self,
         model_name: str,
-        model_path: str,
         hf_repo_id: str,
         alias: str = "champion",
-        token: Optional[str] = None,
+        token: str | None = None,
     ) -> None:
-        """Upload MLflow model to HuggingFace Hub using alias"""
+        """Push model from MLflow registry to HuggingFace Hub"""
         try:
-            if not model_path:
-                model_path = self.download_artifacts_from_registry(model_name, alias)
+            # Download model from MLflow
+            local_path = self.download_model_from_registry(model_name, alias)
 
-            logger.info(f"Uploading {model_path} to HuggingFace repo '{hf_repo_id}'")
-
+            # Push to HuggingFace Hub
             self.hf_api.upload_folder(
-                folder_path=str(model_path),
+                folder_path=local_path,
                 repo_id=hf_repo_id,
-                repo_type="model",
                 token=token,
-                commit_message=f"Upload {model_name}@{alias} from MLflow",
+                commit_message=f"Upload {model_name} v{alias} from MLflow",
             )
 
-            logger.info(f"Successfully uploaded to https://huggingface.co/{hf_repo_id}")
+            # Clean up local files
+            if local_path.exists():
+                shutil.rmtree(local_path)
+
+            logger.info(f"Model pushed to HuggingFace: {hf_repo_id}")
 
         except Exception as e:
-            logger.error(f"Failed to upload to HuggingFace: {e}")
-            raise
-        finally:
-            if "model_path" in locals() and model_path and Path(model_path).exists():
-                shutil.rmtree(model_path)
-
-    def get_model_by_alias(self, model_name: str, alias: str = "champion"):
-        """Get model version info by alias"""
-        try:
-            return self.mlflow_client.get_model_version_by_alias(model_name, alias)
-        except Exception as e:
-            logger.warning(f"Alias '{alias}' not found for model {model_name}: {e}")
-            return None
-
-    def set_model_alias(self, model_name: str, alias: str, version: str) -> None:
-        """Set an alias for a specific model version"""
-        try:
-            self.mlflow_client.set_registered_model_alias(model_name, alias, version)
-            logger.info(f"Set alias '{alias}' for model {model_name} version {version}")
-        except Exception as e:
-            logger.error(
-                f"Failed to set alias '{alias}' for {model_name} version {version}: {e}"
-            )
+            logger.error(f"Failed to push to HuggingFace: {e}")
             raise

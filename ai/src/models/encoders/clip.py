@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from __future__ import annotations
 
 import torch
 import torch.nn as nn
@@ -6,7 +6,7 @@ from transformers import CLIPTextModel, CLIPTokenizer
 
 
 class CLIPTextEncoder(nn.Module):
-    def __init__(self, config: Dict[str, Any], device: str = "cuda"):
+    def __init__(self, config: dict[str, str | bool], device: str = "cuda"):
         super().__init__()
         self.tokenizer = CLIPTokenizer.from_pretrained(
             config["model_id"], low_cpu_mem_usage=bool(config["low_cpu_mem_usage"])
@@ -22,7 +22,7 @@ class CLIPTextEncoder(nn.Module):
         self.text_encoder.eval()
         self.text_encoder.to(device)
 
-    def forward(self, prompts: List[str]) -> torch.Tensor:
+    def forward(self, prompts: list[str]) -> torch.Tensor:
         inputs = self.tokenizer(
             prompts,
             padding="max_length",

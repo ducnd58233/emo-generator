@@ -3,23 +3,38 @@ import math
 import numpy as np
 import torch
 
+from ...common.constants import (
+    DEFAULT_BETA_END,
+    DEFAULT_BETA_START,
+    DEFAULT_EMBEDDING_DIM,
+    DEFAULT_NUM_TRAIN_TIMESTEPS,
+    TIME_EMBEDDING_FREQ_BASE,
+)
 
-def embed_timesteps(timesteps: torch.Tensor, embedding_dim: int = 320) -> torch.Tensor:
+
+def embed_timesteps(
+    timesteps: torch.Tensor, embedding_dim: int = DEFAULT_EMBEDDING_DIM
+) -> torch.Tensor:
+    """Create sinusoidal timestep embeddings."""
     half_dim = embedding_dim // 2
     freqs = torch.exp(
-        -math.log(10000) * torch.arange(half_dim, dtype=torch.float32) / half_dim
+        -math.log(TIME_EMBEDDING_FREQ_BASE)
+        * torch.arange(half_dim, dtype=torch.float32)
+        / half_dim
     ).to(device=timesteps.device)
     args = timesteps[:, None].float() * freqs[None, :]
     return torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
 
 
 class DDPMScheduler:
+    """DDPM (Denoising Diffusion Probabilistic Models) scheduler for training and inference."""
+
     def __init__(
         self,
         random_generator: torch.Generator,
-        train_timesteps: int = 1000,
-        beta_start: float = 0.00085,
-        beta_end: float = 0.012,
+        train_timesteps: int = DEFAULT_NUM_TRAIN_TIMESTEPS,
+        beta_start: float = DEFAULT_BETA_START,
+        beta_end: float = DEFAULT_BETA_END,
     ):
         self.betas = (
             torch.linspace(
@@ -34,7 +49,8 @@ class DDPMScheduler:
         self.total_train_timesteps = train_timesteps
         self.timesteps = torch.from_numpy(np.arange(0, train_timesteps)[::-1].copy())
 
-    def set_steps(self, num_inference_steps: int = 50):
+    def set_steps(self, num_inference_steps: int = 50) -> None:
+        """Set the number of inference steps and corresponding timesteps."""
         self.num_inference_steps = num_inference_steps
         step_ratio = self.total_train_timesteps // num_inference_steps
         timesteps = (
@@ -46,9 +62,11 @@ class DDPMScheduler:
         self.timesteps = torch.from_numpy(timesteps)
 
     def _get_prev_timestep(self, timestep: int) -> int:
+        """Get the previous timestep for a given timestep."""
         return timestep - self.total_train_timesteps // self.num_inference_steps
 
     def _get_variance(self, timestep: int) -> torch.Tensor:
+        """Calculate variance for a given timestep."""
         prev_t = self._get_prev_timestep(timestep)
         alpha_cumprod_t = self.alphas_cumprod[timestep]
         alpha_cumprod_t_prev = (
@@ -61,6 +79,7 @@ class DDPMScheduler:
     def step(
         self, timestep: int, latents: torch.Tensor, model_output: torch.Tensor
     ) -> torch.Tensor:
+        """Perform one denoising step."""
         t = timestep
         prev_t = self._get_prev_timestep(t)
 
@@ -107,6 +126,7 @@ class DDPMScheduler:
     def add_noise(
         self, original_samples: torch.Tensor, timesteps: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Add noise to original samples at given timesteps."""
         alphas_cumprod = self.alphas_cumprod.to(
             device=original_samples.device, dtype=original_samples.dtype
         )

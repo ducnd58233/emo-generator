@@ -1,48 +1,48 @@
 import logging
-import os
 import sys
 from datetime import datetime
-from typing import Optional
 
-# Set up logs directory at project root
-PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from ..common.constants import (
+    DATE_FORMAT,
+    DEFAULT_LOGGER_NAME,
+    LOG_EXT,
+    LOG_FORMAT,
+    LOGS_DIR,
 )
-LOGS_DIR = os.path.join(PROJECT_ROOT, "logs")
-os.makedirs(LOGS_DIR, exist_ok=True)
 
-_DEFAULT_LOGGER_NAME = "emo_generator"
-_CONFIGURED_LOGGERS = set()
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+_CONFIGURED_LOGGERS: set[str] = set()
 
 
 def setup_logger(
-    name: str = _DEFAULT_LOGGER_NAME, level: int = logging.INFO
+    name: str = DEFAULT_LOGGER_NAME, level: int = logging.INFO
 ) -> logging.Logger:
-    """
-    Set up and return a logger instance with file and console handlers.
-    Ensures handlers are not duplicated.
-    Args:
-        name: Logger name.
-        level: Logging level.
-    Returns:
-        Configured logger instance.
-    """
-    logger = logging.getLogger(name)
-    if name in _CONFIGURED_LOGGERS:
-        return logger
+    """Set up and return a logger instance with file and console handlers.
 
+
+    Args:
+        name: Logger name
+        level: Logging level
+
+    Returns:
+        Configured logger instance
+    """
+    if name in _CONFIGURED_LOGGERS:
+        return logging.getLogger(name)
+
+    logger = logging.getLogger(name)
     logger.setLevel(level)
     logger.handlers.clear()
-    # Create formatter
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
 
-    # File handler
-    today = datetime.now().strftime("%Y-%m-%d")
-    file_handler = logging.FileHandler(
-        os.path.join(LOGS_DIR, f"{today}.log"), encoding="utf-8"
-    )
+    # Create formatter
+    formatter = logging.Formatter(LOG_FORMAT)
+
+    # File handler with date-based naming
+    today = datetime.now().strftime(DATE_FORMAT)
+    log_file = LOGS_DIR / f"{today}{LOG_EXT}"
+
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
     logger.addHandler(file_handler)
@@ -62,20 +62,20 @@ def setup_logger(
     return logger
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
-    """
-    Get a logger by name
+def get_logger(name: str | None = None) -> logging.Logger:
+    """Get a logger by name.
+
+    If the logger hasn't been configured yet, it will be set up automatically.
+
     Args:
-        name: Logger name (defaults to root logger if None).
+        name: Logger name (defaults to default logger if None)
+
     Returns:
-        Logger instance.
+        Logger instance
     """
-    logger_name = name or _DEFAULT_LOGGER_NAME
+    logger_name = name or DEFAULT_LOGGER_NAME
 
     if logger_name not in _CONFIGURED_LOGGERS:
         setup_logger(logger_name)
 
     return logging.getLogger(logger_name)
-
-
-setup_logger()

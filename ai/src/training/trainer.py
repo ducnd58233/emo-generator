@@ -1,12 +1,20 @@
-from typing import Any, Dict
+from __future__ import annotations
 
 import mlflow
+import mlflow.models
 import torch
 import torch.nn as nn
 from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from ..common.constants import (
+    CLIP_MAX_LENGTH,
+    DEFAULT_CONTEXT_DIM,
+    DEFAULT_LATENT_CHANNELS,
+    DEFAULT_LATENT_HEIGHT,
+    DEFAULT_LATENT_WIDTH,
+)
 from ..models.encoders.clip import CLIPTextEncoder
 from ..models.encoders.vae import VAEEncoder
 from ..models.stable_diffusion.diffusion import StableDiffusion
@@ -21,7 +29,11 @@ logger = get_logger(__name__)
 class StableDiffusionTrainer:
     """Stable Diffusion trainer with MLflow integration"""
 
-    def __init__(self, config: Dict[str, Any], device: str = "cuda"):
+    def __init__(
+        self,
+        config: dict[str, dict[str, str | int | float | bool]],
+        device: str = "cuda",
+    ):
         self.config = config
         self.device = device
         self.current_epoch = 0
@@ -40,7 +52,7 @@ class StableDiffusionTrainer:
 
         self._init_mlflow()
 
-    def _init_models(self):
+    def _init_models(self) -> None:
         """Initialize all models"""
         model_config = self.config["model"]
 
@@ -64,7 +76,7 @@ class StableDiffusionTrainer:
             beta_end=model_config["stable_diffusion"]["beta_end"],
         )
 
-    def _init_training_components(self):
+    def _init_training_components(self) -> None:
         """Initialize optimizer, scheduler, etc."""
         training_config = self.config["training"]
 
@@ -83,32 +95,34 @@ class StableDiffusionTrainer:
         self.scaler = GradScaler() if training_config["mixed_precision"] else None
         self.criterion = nn.MSELoss()
 
-    def _init_mlflow(self):
+    def _init_mlflow(self) -> None:
         """Initialize MLflow tracking"""
-        mlflow.set_tracking_uri(self.config["mlflow"]["tracking_uri"])
-        mlflow.set_experiment(self.config["experiment"]["name"])
-        logger.info(f"MLflow tracking URI: {self.config['mlflow']['tracking_uri']}")
-        logger.info(f"MLflow experiment: {self.config['experiment']['name']}")
+        try:
+            mlflow.set_tracking_uri(self.config["mlflow"]["tracking_uri"])
+            mlflow.set_experiment(self.config["experiment"]["name"])
+            logger.info(f"MLflow experiment: {self.config['experiment']['name']}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize MLflow: {e}")
 
     def train_epoch(self, train_loader: DataLoader, start_batch: int = 0) -> float:
-        """Train for one epoch."""
+        """Train for one epoch"""
         self.diffusion_model.train()
         epoch_loss = 0.0
-        num_batches = len(train_loader)
+
+        remaining_batches = len(train_loader) - start_batch
+
+        train_iter = iter(train_loader)
+        for _ in range(start_batch):
+            next(train_iter)
+        progress_iter = enumerate(train_iter, start=start_batch)
 
         progress_bar = tqdm(
-            train_loader,
-            desc=f"Epoch {self.current_epoch + 1}/{self.config['training']['epochs']}",
+            progress_iter,
+            desc=f"Epoch {self.current_epoch + 1}",
+            total=remaining_batches,
         )
 
-        progress_iter = iter(progress_bar)
-        for _ in range(start_batch):
-            try:
-                next(progress_iter)
-            except StopIteration:
-                break
-
-        for batch_idx, (images, prompts) in enumerate(progress_iter, start=start_batch):
+        for batch_idx, (images, prompts) in progress_bar:
             loss = self._training_step(images, prompts)
             epoch_loss += loss
 
@@ -144,9 +158,9 @@ class StableDiffusionTrainer:
                 }
             )
 
-        return epoch_loss / num_batches if num_batches > 0 else 0.0
+        return epoch_loss / remaining_batches if remaining_batches > 0 else 0.0
 
-    def _training_step(self, images: torch.Tensor, prompts: list) -> float:
+    def _training_step(self, images: torch.Tensor, prompts: list[str]) -> float:
         """Single training step"""
         images = images.to(self.device)
 
@@ -217,11 +231,7 @@ class StableDiffusionTrainer:
         return val_loss / len(val_loader)
 
     def load_checkpoint(self, filepath: str) -> None:
-        """
-        Load model, optimizer, scheduler, scaler, and training state from checkpoint for resume training.
-        Args:
-            filepath: Path to checkpoint file.
-        """
+        """Load model, optimizer, scheduler, scaler, and training state from checkpoint for resume training."""
         checkpoint = self.checkpoint_manager.load_checkpoint(
             filepath,
             self.diffusion_model,
@@ -235,62 +245,103 @@ class StableDiffusionTrainer:
         self.global_step = checkpoint.get("global_step", 0)
         self.resume_batch_idx = checkpoint.get("batch_idx", 0)
         logger.info(
-            f"Checkpoint loaded: epoch={self.current_epoch}, global_step={self.global_step}, best_loss={self.best_loss}, batch_idx={self.resume_batch_idx}"
+            f"Checkpoint loaded: epoch={self.current_epoch}, global_step={self.global_step}, "
+            f"best_loss={self.best_loss}, batch_idx={self.resume_batch_idx}"
         )
 
-    def save_model(self, is_best: bool = False, is_final: bool = False) -> None:
-        """Save model to registry"""
-        signature = self._create_model_signature()
+    def save_model(self, filepath: str) -> None:
+        """Save only the model state dict to local file"""
+        torch.save(self.diffusion_model.state_dict(), filepath)
+        logger.info(f"Model saved to {filepath}")
 
-        tags = {
-            "epoch": str(self.current_epoch + 1),
-            "step": str(self.global_step),
-            "best_loss": str(self.best_loss),
-        }
-        if is_best:
-            tags.update({"model_type": "best"})
-        if is_final:
-            tags.update({"model_type": "final"})
+    def register_model_to_mlflow(
+        self, model_name: str, is_best: bool = False, is_final: bool = False
+    ) -> str | None:
+        """Register model to MLflow Model Registry with proper versioning and aliases.
 
-        alias = "candidate"
-        if is_best:
-            alias = "challenger"
-        elif is_final:
-            alias = "champion"
+        Args:
+            model_name: Name for the registered model
+            is_best: Whether this is the best model so far
+            is_final: Whether this is the final model after training
 
+        Returns:
+            Model version string if successful, None otherwise
+        """
         try:
+            # Create model signature for MLflow
+            signature = self._create_model_signature()
+
+            # Prepare tags
+            tags = {
+                "epoch": str(self.current_epoch + 1),
+                "step": str(self.global_step),
+                "best_loss": str(self.best_loss),
+                "model_type": "candidate",  # default
+            }
+
+            if is_best:
+                tags["model_type"] = "best"
+            elif is_final:
+                tags["model_type"] = "final"
+
+            alias = "candidate"  # default
+            if is_best:
+                alias = "challenger"
+            elif is_final:
+                alias = "champion"
+
             version = self.model_registry.register_model(
                 model=self.diffusion_model,
-                model_name=self.config["experiment"]["model_name"],
+                model_name=model_name,
                 signature=signature,
                 tags=tags,
                 alias=alias,
             )
-            logger.info(f"Registered model version {version} with alias '{alias}'")
+
+            logger.info(
+                f"Model registered to MLflow: {model_name} v{version} with alias '{alias}'"
+            )
+            return version
+
         except Exception as e:
-            logger.error(f"Failed to save model to MLflow: {e}")
+            logger.error(f"Failed to register model to MLflow: {e}")
+            return None
 
     def _create_model_signature(self):
-        """Create MLflow model signature"""
-        sample_input = torch.randn(1, 4, 4, 4).to(self.device)
-        sample_context = torch.randn(1, 77, 512).to(self.device)
-        sample_time = torch.randint(0, 1000, (1,)).to(self.device)
-
-        with torch.no_grad():
-            sample_output = self.diffusion_model(
-                sample_input, sample_context, sample_time
+        """Create MLflow model signature for the diffusion model."""
+        try:
+            sample_latent = torch.randn(
+                1, DEFAULT_LATENT_CHANNELS, DEFAULT_LATENT_HEIGHT, DEFAULT_LATENT_WIDTH
+            ).to(self.device)
+            sample_context = torch.randn(1, CLIP_MAX_LENGTH, DEFAULT_CONTEXT_DIM).to(
+                self.device
             )
+            sample_timestep = torch.randint(0, 1000, (1,)).to(self.device)
 
-        return mlflow.models.infer_signature(
-            {
-                "latent": sample_input.cpu().numpy(),
+            # Get sample output
+            with torch.no_grad():
+                sample_output = self.diffusion_model(
+                    sample_latent, sample_context, sample_timestep
+                )
+
+            # Create signature
+            input_schema = {
+                "latent": sample_latent.cpu().numpy(),
                 "context": sample_context.cpu().numpy(),
-                "timestep": sample_time.cpu().numpy(),
-            },
-            sample_output.cpu().numpy(),
-        )
+                "timestep": sample_timestep.cpu().numpy(),
+            }
 
-    def train(self, train_loader: DataLoader, val_loader: Any = None) -> None:
+            output_schema = sample_output.cpu().numpy()
+
+            return mlflow.models.infer_signature(input_schema, output_schema)
+
+        except Exception as e:
+            logger.warning(f"Failed to create model signature: {e}")
+            return None
+
+    def train(
+        self, train_loader: DataLoader, val_loader: DataLoader | None = None
+    ) -> None:
         """Run the full training loop"""
         logger.info(
             f"Starting training for {self.config['training']['epochs']} epochs..."
@@ -330,25 +381,21 @@ class StableDiffusionTrainer:
             except Exception as e:
                 logger.warning(f"Failed to log MLflow parameters: {e}")
 
-            batches_per_epoch = len(train_loader)
-            start_epoch = self.current_epoch
-            start_batch = getattr(self, "resume_batch_idx", 0)
+            total_epochs = self.config["training"]["epochs"]
 
-            self.config["training"]["epochs"]
-            logger.info(
-                f"Resuming from epoch {start_epoch + 1}, batch {start_batch + 1}/{batches_per_epoch}, step {self.global_step}"
-            )
-
-            for epoch in range(self.current_epoch, self.config["training"]["epochs"]):
+            for epoch in range(self.current_epoch, total_epochs):
                 self.current_epoch = epoch
 
-                if epoch == start_epoch:
-                    train_loss = self.train_epoch(train_loader, start_batch=start_batch)
-                else:
-                    train_loss = self.train_epoch(train_loader, start_batch=0)
+                # Train epoch
+                start_batch = (
+                    self.resume_batch_idx if epoch == self.current_epoch else 0
+                )
+                train_loss = self.train_epoch(train_loader, start_batch)
                 self.resume_batch_idx = 0
 
-                if val_loader:
+                # Validation
+                val_loss = None
+                if val_loader is not None:
                     val_loss = self.validate(val_loader)
 
                     try:
@@ -357,28 +404,47 @@ class StableDiffusionTrainer:
                                 "val_loss": val_loss,
                                 "train_epoch_loss": train_loss,
                             },
-                            step=epoch,
+                            step=self.global_step,
                         )
                     except Exception as e:
                         logger.warning(f"Failed to log validation metrics: {e}")
 
                     if val_loss < self.best_loss:
                         self.best_loss = val_loss
-                        self.save_model(is_best=True)
-                        logger.info(f"New best model! Validation loss: {val_loss:.5f}")
+                        self.checkpoint_manager.save_checkpoint(
+                            model=self.diffusion_model,
+                            optimizer=self.optimizer,
+                            lr_scheduler=self.lr_scheduler,
+                            epoch=epoch,
+                            global_step=self.global_step,
+                            best_loss=self.best_loss,
+                            scaler=self.scaler,
+                            batch_idx=0,
+                            is_best=True,
+                        )
 
-                    logger.info(
-                        f"Epoch {epoch + 1}: Train Loss: {train_loss:.5f}, Val Loss: {val_loss:.5f}"
-                    )
-                else:
-                    try:
-                        mlflow.log_metrics({"train_epoch_loss": train_loss}, step=epoch)
-                    except Exception as e:
-                        logger.warning(f"Failed to log training metrics: {e}")
-                    logger.info(f"Epoch {epoch + 1}: Train Loss: {train_loss:.5f}")
+                        model_name = self.config["experiment"].get(
+                            "model_name", "emoji-stable-diffusion"
+                        )
+                        self.register_model_to_mlflow(
+                            model_name=model_name, is_best=True
+                        )
+                        logger.info(
+                            f"New best model registered! Validation loss: {val_loss:.6f}"
+                        )
 
                 self.lr_scheduler.step()
 
-            self.save_model(is_final=True)
+                logger.info(
+                    f"Epoch {epoch + 1} completed: train_loss={train_loss:.6f}"
+                    + (f", val_loss={val_loss:.6f}" if val_loss else "")
+                )
+
+        # Register final model to MLflow
+        model_name = self.config["experiment"].get(
+            "model_name", "emoji-stable-diffusion"
+        )
+        self.register_model_to_mlflow(model_name=model_name, is_final=True)
 
         logger.info("Training completed!")
+        return self.global_step

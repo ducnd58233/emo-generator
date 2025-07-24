@@ -114,7 +114,8 @@ poetry run python -m scripts.evaluate \
   --model_path <path_to_checkpoint> \
   --config config/model.yaml \
   --data_config config/data.yaml \
-  --training_config config/training.yaml
+  --training_config config/training.yaml \
+  --output_dir <path_to_output> \
 ```
 
 Skip sample generation for faster evaluation:
