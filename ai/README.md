@@ -159,13 +159,30 @@ poetry install
 poetry run python -m scripts.download_from_huggingface
 ```
 
-3. **Launch the Streamlit app**:
+3. **Configure environment variables**:
+
+Create a `.env` file in the `ai/` directory with the following content:
+
+```ini
+# .env
+EMO_GENERATOR_DEV_MODE=1  # Set to 0 for production mode
+EMO_GENERATOR_MODEL_PATH=models/mlflow_registry/data/model.pth  # Change to your model path if needed
+```
+
+- `EMO_GENERATOR_DEV_MODE=1` (default): Development mode. The sidebar UI allows you to choose the model source (MLflow Registry or Local Checkpoint) and specify the model path interactively.
+- `EMO_GENERATOR_DEV_MODE=0`: Production mode. The app will load the model from the specified path and will not show the model source/path selection UI.
+- `EMO_GENERATOR_MODEL_PATH`: Sets the model checkpoint path for production mode.
+
+4. **Launch the Streamlit app**:
 
 ```bash
 poetry run streamlit run scripts/streamlit_app.py
 ```
 
 The app will automatically open in your browser at `http://localhost:8501`.
+
+- In production mode, the app will load the model from the specified path and will not show the model source/path selection UI.
+- In development mode, you have full control over model source and path in the sidebar.
 
 #### Features
 

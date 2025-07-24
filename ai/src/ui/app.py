@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 from typing import Any
 
 import streamlit as st
@@ -16,6 +17,11 @@ from ..utils.logging import get_logger
 from .streamlit_utils import StreamlitModelManager
 
 logger = get_logger(__name__)
+
+EMO_GENERATOR_DEV_MODE = os.environ.get("EMO_GENERATOR_DEV_MODE", "1") == "1"
+EMO_GENERATOR_MODEL_PATH = os.environ.get(
+    "EMO_GENERATOR_MODEL_PATH", "models/mlflow_registry/data/model.pth"
+)
 
 
 def setup_page_config() -> None:
@@ -50,11 +56,14 @@ def render_sidebar(model_manager: StreamlitModelManager) -> dict[str, Any]:
         # Model Loading Section
         st.subheader("Model Configuration")
 
-        model_source = st.radio(
-            "Model Source",
-            ["MLflow Registry", "Local Checkpoint"],
-            help="Choose whether to load from MLflow Model Registry or a local checkpoint file",
-        )
+        if EMO_GENERATOR_DEV_MODE:
+            model_source = st.radio(
+                "Model Source",
+                ["MLflow Registry", "Local Checkpoint"],
+                help="Choose whether to load from MLflow Model Registry or a local checkpoint file",
+            )
+        else:
+            model_source = "Local Checkpoint"
 
         if model_source == "MLflow Registry":
             col1, col2 = st.columns(2)
@@ -90,19 +99,29 @@ def render_sidebar(model_manager: StreamlitModelManager) -> dict[str, Any]:
                         st.error(f"Failed to load model: {e}")
 
         else:  # Local Checkpoint
-            checkpoint_path = st.text_input(
-                "Checkpoint Path",
-                value="models/mlflow_registry/data/model.pth",
-                help="Path to the local model checkpoint file",
-            )
-
-            if st.button("Load Checkpoint", type="primary"):
-                with st.spinner("Loading model from checkpoint..."):
-                    try:
-                        model_manager.load_model_from_checkpoint(checkpoint_path)
-                        st.success("Model loaded successfully!")
-                    except Exception as e:
-                        st.error(f"Failed to load model: {e}")
+            if EMO_GENERATOR_DEV_MODE:
+                checkpoint_path = st.text_input(
+                    "Checkpoint Path",
+                    value=EMO_GENERATOR_MODEL_PATH,
+                    help="Path to the local model checkpoint file",
+                )
+                if st.button("Load Checkpoint", type="primary"):
+                    with st.spinner("Loading model from checkpoint..."):
+                        try:
+                            model_manager.load_model_from_checkpoint(checkpoint_path)
+                            st.success("Model loaded successfully!")
+                        except Exception as e:
+                            st.error(f"Failed to load model: {e}")
+            else:
+                checkpoint_path = EMO_GENERATOR_MODEL_PATH
+                if not st.session_state.get("model_loaded_prod", False):
+                    with st.spinner("Loading model from checkpoint..."):
+                        try:
+                            model_manager.load_model_from_checkpoint(checkpoint_path)
+                            st.session_state["model_loaded_prod"] = True
+                            st.success("Model loaded successfully!")
+                        except Exception as e:
+                            st.error(f"Failed to load model: {e}")
 
         # Display model status
         if model_manager.is_model_loaded():
@@ -260,7 +279,7 @@ def render_footer() -> None:
     st.divider()
     st.markdown(
         """
-        <div style='text-align: center; color: #666; margin-top: 2rem;'>
+        <div style='text-align: center; color: #666; margin-top: 0.5rem;'>
             <p>Built with Streamlit, Stable Diffusion, and MLflow</p>
             <p><small>Emoji Generator v1.0 | Generate unique emojis from text prompts</small></p>
         </div>
@@ -269,7 +288,7 @@ def render_footer() -> None:
     )
 
 
-def run_app() -> None:
+def run_app():
     """Main application entry point."""
     setup_page_config()
 
