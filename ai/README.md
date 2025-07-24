@@ -7,11 +7,12 @@ A modern, modular, and extensible framework for generating custom emoji images f
 ## 🚀 Features
 
 - **Text-to-Emoji Generation**: Generate unique emoji images from any text prompt using a custom Stable Diffusion pipeline.
-- **Modular Architecture**: Built with extensibility in mind—swap out encoders, diffusion models, or datasets easily.
-- **Training, Inference, and Evaluation**: Full support for model training, inference, and evaluation with simple commands.
-- **Streamlit Web UI**: Interactive web interface for easy emoji generation with real-time parameter control.
-- **MLflow Integration**: Track experiments, log metrics, and manage model versions with MLflow.
-- **Data Management**: Download and extract datasets from Google Drive with a single script.
+- **Modular Architecture**: Easily swap encoders, diffusion models, or datasets.
+- **Training, Inference, and Evaluation**: Full support with simple commands.
+- **Streamlit Web UI**: Interactive emoji generation with real-time parameter control.
+- **MLflow Integration**: Track experiments, log metrics, manage model versions.
+- **Hugging Face Hub Integration**: Upload/download models for sharing and deployment.
+- **Data Management**: Download/extract datasets from Google Drive with a single script.
 - **Reproducible Environments**: Use Conda, Poetry, or Docker for robust, reproducible setups.
 - **GPU Acceleration**: Out-of-the-box support for CUDA and mixed-precision training.
 
@@ -27,6 +28,8 @@ A modern, modular, and extensible framework for generating custom emoji images f
   - [Evaluation](#evaluation)
   - [Streamlit Web UI](#streamlit-web-ui)
   - [MLflow Tracking](#mlflow-tracking)
+  - [Model Management](#model-management)
+  - [Hugging Face Model Management](#hugging-face-model-management)
 - [Data Management](#-data-management)
 - [Directory Structure](#-directory-structure)
 - [Docker](#-docker)
@@ -38,6 +41,8 @@ A modern, modular, and extensible framework for generating custom emoji images f
 ## ⚡ Quickstart
 
 ### 1. Clone the repository
+
+Clone the repo and enter the project directory:
 
 ```bash
 git clone git@github.com:ducnd58233/emo-generator.git
@@ -56,24 +61,27 @@ poetry install
 
 #### Export conda env
 
+Export your current conda environment for reproducibility:
+
 ```bash
 conda env export --from-history --no-builds > environment.yml
 ```
 
 #### Create .env file
 
+Copy the example environment file:
+
 ```bash
 cp .env.example .env
 ```
 
-- And add your HuggingFace token
-- ***
+---
 
 ## 🛠️ Usage
 
 ### MLflow Tracking
 
-Start the MLflow tracking server:
+Start the MLflow tracking server (for experiment tracking and model registry):
 
 ```bash
 poetry run python -m scripts.mlflow_client
@@ -86,8 +94,8 @@ Train a Stable Diffusion model for emoji generation:
 ```bash
 poetry run python -m scripts.train \
   --config config/model.yaml \
-  --train_config config/training.yaml \
-  --data_config config/data.yaml
+  --train-config config/training.yaml \
+  --data-config config/data.yaml
 ```
 
 ### Inference
@@ -99,10 +107,10 @@ poetry run python -m scripts.inference \
   --model_path <path_to_checkpoint> \
   --config config/model.yaml \
   --prompt "a confused blob emoji with wide eyes" \
-  --num_images 1 \
-  --num_steps 100 \
-  --latent_height 4 \
-  --latent_width 4 \
+  --num-images 1 \
+  --num-steps 100 \
+  --latent-height 4 \
+  --latent-width 4 \
   --seed 42 \
   --device cuda
 ```
@@ -113,27 +121,29 @@ Evaluate your model and generate qualitative samples:
 
 ```bash
 poetry run python -m scripts.evaluate \
-  --model_path <path_to_checkpoint> \
+  --model-path <path_to_checkpoint> \
   --config config/model.yaml \
-  --data_config config/data.yaml \
-  --training_config config/training.yaml \
-  --output_dir <path_to_output> \
+  --data-config config/data.yaml \
+  --training-config config/training.yaml \
+  --output-dir <path_to_output>
 ```
 
 Skip sample generation for faster evaluation:
 
 ```bash
 poetry run python -m scripts.evaluate \
-  --model_path <path_to_checkpoint> \
+  --model-path <path_to_checkpoint> \
   --config config/model.yaml \
-  --data_config config/data.yaml \
-  --training_config config/training.yaml \
-  --skip_samples
+  --data-config config/data.yaml \
+  --training-config config/training.yaml \
+  --skip-samples
 ```
 
-### Streamlit Web UI
+---
 
-Launch an interactive web interface for emoji generation with real-time parameter control and model management. The Streamlit app provides a user-friendly way to generate emojis without command-line interaction.
+## 🌐 Streamlit Web UI
+
+Launch an interactive web interface for emoji generation with real-time parameter control and model management.
 
 #### Quick Start
 
@@ -146,10 +156,7 @@ poetry install
 2. **Download a trained model** (if you don't have one):
 
 ```bash
-poetry run python -m scripts.download_mlflow_model \
-  --model-name emoji-stable-diffusion \
-  --alias champion \
-  --output-dir models/mlflow_registry
+poetry run python -m scripts.download_from_huggingface
 ```
 
 3. **Launch the Streamlit app**:
@@ -162,14 +169,14 @@ The app will automatically open in your browser at `http://localhost:8501`.
 
 #### Features
 
-- **🎨 Interactive Generation**: Generate emojis from text prompts with real-time preview
-- **⚙️ Parameter Control**: Adjust inference steps, guidance scale, seed, and latent dimensions
-- **🔧 Model Management**: Load models from MLflow Registry or local checkpoints
-- **💾 Download Results**: Save generated emojis as PNG files
-- **🚀 Auto-caching**: Models cached for improved performance with Streamlit's `@st.cache_resource`
-- **📱 Responsive UI**: Modern, mobile-friendly interface with sidebar controls
-- **💡 Prompt Suggestions**: Quick-start with predefined example prompts
-- **📊 Device Detection**: Automatic GPU/CPU detection and usage display
+- 🎨 Interactive Generation: Generate emojis from text prompts with real-time preview
+- ⚙️ Parameter Control: Adjust inference steps, guidance scale, seed, and latent dimensions
+- 🔧 Model Management: Load models from MLflow Registry or local checkpoints
+- 💾 Download Results: Save generated emojis as PNG files
+- 🚀 Auto-caching: Models cached for improved performance
+- 📱 Responsive UI: Modern, mobile-friendly interface
+- 💡 Prompt Suggestions: Quick-start with predefined example prompts
+- 📊 Device Detection: Automatic GPU/CPU detection and usage display
 
 #### Model Loading Options
 
@@ -193,20 +200,20 @@ The app will automatically open in your browser at `http://localhost:8501`.
 
 #### Usage Tips
 
-**Prompt Writing:**
+> **Prompt Writing:**
+>
+> - Be specific and descriptive: "a confused blob emoji with wide eyes"
+> - Use emotion words: happy, sad, confused, excited, surprised
+> - Include style descriptors: sparkly, glowing, cartoon-like, pixel-art
+> - Mention facial features: wide eyes, small mouth, raised eyebrows
+> - Add context: "a sleepy cat emoji with droopy eyes and a yawn"
 
-- Be specific and descriptive: "a confused blob emoji with wide eyes"
-- Use emotion words: happy, sad, confused, excited, surprised
-- Include style descriptors: sparkly, glowing, cartoon-like, pixel-art
-- Mention facial features: wide eyes, small mouth, raised eyebrows
-- Add context: "a sleepy cat emoji with droopy eyes and a yawn"
-
-**Parameter Tuning:**
-
-- **More inference steps**: Higher quality but slower generation (50-100 recommended)
-- **Higher guidance scale**: Closer adherence to prompt (7.5-15.0 typical range)
-- **Consistent seed**: Use same seed for reproducible results across runs
-- **Larger latent dimensions**: Higher resolution output (use 8x8 for detailed emojis)
+> **Parameter Tuning:**
+>
+> - More inference steps: Higher quality but slower generation (50-100 recommended)
+> - Higher guidance scale: Closer adherence to prompt (7.5-15.0 typical range)
+> - Consistent seed: Use same seed for reproducible results
+> - Larger latent dimensions: Higher resolution output (use 8x8 for detailed emojis)
 
 **Example Prompts:**
 
@@ -219,32 +226,34 @@ The app will automatically open in your browser at `http://localhost:8501`.
 
 #### Troubleshooting
 
-**Model Loading Issues:**
+> **Model Loading Issues:**
+>
+> - Ensure model files exist in `models/mlflow_registry/data/model.pth`
+> - Verify `config/model.yaml` exists and is properly formatted
+> - Check that all dependencies are installed: `poetry install` (remember to activate conda env first)
 
-- Ensure model files exist in `models/mlflow_registry/data/model.pth`
-- Verify `config/model.yaml` exists and is properly formatted
-- Check that all dependencies are installed: `poetry install` (remember to activate conda env first)
+> **Performance Issues:**
+>
+> - Reduce inference steps for faster generation
+> - Use smaller latent dimensions if running out of memory
+> - Close other applications to free up GPU memory
 
-**Performance Issues:**
+> **Common Errors:**
+>
+> - "Config file not found": Run from the `ai/` directory
+> - "Model file not found": Download a model first using the download script
+> - Import errors: Install missing dependencies
 
-- Reduce inference steps for faster generation
-- Use smaller latent dimensions if running out of memory
-- Close other applications to free up GPU memory
+---
 
-**Common Errors:**
-
-- `"Config file not found"`: Run from the `ai/` directory
-- `"Model file not found"`: Download a model first using the download script
-- Import errors: Install missing dependencies
-
-### Model Management
+## 📦 Model Management
 
 Register a trained model to MLflow Model Registry:
 
 ```bash
 poetry run python -m scripts.register_to_mlflow \
-  --checkpoint_path models/best_model.pt \
-  --model_name emoji-stable-diffusion \
+  --checkpoint-path models/best_model.pt \
+  --model-name emoji-stable-diffusion \
   --alias candidate
 ```
 
@@ -257,7 +266,86 @@ python -m scripts.download_mlflow_model \
   --output-dir models/mlflow_registry
 ```
 
-## Configuration
+---
+
+## 🤗 Hugging Face Model Management
+
+Easily upload and download models to/from the Hugging Face Hub for sharing, deployment, or collaboration.
+
+### Prerequisites
+
+- [Create a Hugging Face account](https://huggingface.co/join)
+- [Create a repository](https://huggingface.co/new) (or use an existing one)
+- Add your Hugging Face token to your `.env` file as `HF_TOKEN` (see Quickstart)
+- Install dependencies: `poetry install` (includes `huggingface_hub`)
+
+### Upload a Model to Hugging Face Hub
+
+Upload a model file or an entire folder (including config, tokenizer, etc.):
+
+```bash
+poetry run python -m scripts.upload_to_huggingface \
+  --model-path <path_to_model_or_folder> \
+  --repo-id <username/repo-name> \
+  [--token <your_hf_token>] \
+  [--commit-message "Add my model"]
+```
+
+- `--model-path`: Path to the model file or directory to upload
+- `--repo-id`: Your Hugging Face repo (e.g. `your-username/emoji-model`)
+- `--token`: (Optional) Hugging Face token (defaults to `HF_TOKEN` in `.env`)
+- `--commit-message`: (Optional) Custom commit message
+
+**Example:**
+
+```bash
+poetry run python -m scripts.upload_to_huggingface \
+  --model-path models/mlflow_registry/data \
+  --repo-id your-username/emoji-model
+```
+
+### Download a Model from Hugging Face Hub
+
+Download a specific file (e.g. `model.pth`) or the entire repository snapshot:
+
+```bash
+poetry run python -m scripts.download_from_huggingface \
+  --repo-id <username/repo-name> \
+  [--filename <file_name>] \
+  [--output-dir <output_directory>] \
+  [--token <your_hf_token>]
+```
+
+- `--repo-id`: The Hugging Face repo to download from (default: `ducnd58233/emo-gen`)
+- `--filename`: (Optional) Specific file to download (default: `model.pth`). Omit to download the full repo.
+- `--output-dir`: (Optional) Where to save the file(s) (default: `models/mlflow_registry/data`)
+- `--token`: (Optional) Hugging Face token (defaults to `HF_TOKEN` in `.env`)
+
+**Example: Download a single file**
+
+```bash
+poetry run python -m scripts.download_from_huggingface \
+  --repo-id your-username/emoji-model \
+  --filename model.pth
+```
+
+**Example: Download the entire repo**
+
+```bash
+poetry run python -m scripts.download_from_huggingface \
+  --repo-id your-username/emoji-model
+```
+
+> **Tips:**
+>
+> - For large models, uploading/downloading the entire folder is recommended to preserve all assets (config, tokenizer, etc.).
+> - Make sure your Hugging Face token has write access for uploads.
+> - You can manage your tokens at https://huggingface.co/settings/tokens
+> - For more details, see the [Hugging Face Hub documentation](https://huggingface.co/docs/hub/models-uploading)
+
+---
+
+## ⚙️ Configuration
 
 The project uses three separate YAML configuration files for modularity and flexibility:
 
@@ -277,7 +365,7 @@ Download and extract datasets from Google Drive:
 poetry run python scripts/download_and_extract_gdrive.py <gdrive_link1> [<gdrive_link2> ...]
 ```
 
-Example
+**Example:**
 
 ```bash
 poetry run python scripts/download_and_extract_gdrive.py \
@@ -291,7 +379,7 @@ All files will be downloaded to `ai/datasets`. Zip archives are automatically ex
 
 ## 🗂️ Directory Structure
 
-```
+```text
 ai/
   config/           # YAML configs for model, data, training
   datasets/         # Downloaded datasets (images, metadata)
@@ -311,10 +399,13 @@ ai/
 
 ## 🧩 Troubleshooting & Tips
 
-- If you encounter CUDA or memory errors, try reducing batch size or using CPU mode (`--device cpu`).
-- All configs are in YAML—customize model, data, and training easily.
-- **Streamlit UI Issues**: Ensure you're running from the `ai/` directory and have downloaded a model first.
-- For more help, check issues or open a discussion.
+> **CUDA or memory errors?** Try reducing batch size or using CPU mode (`--device cpu`).
+>
+> **All configs are in YAML**—customize model, data, and training easily.
+>
+> **Streamlit UI Issues:** Ensure you're running from the `ai/` directory and have downloaded a model first.
+>
+> For more help, check issues or open a discussion.
 
 ---
 

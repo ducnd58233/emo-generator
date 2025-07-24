@@ -58,13 +58,13 @@ def main() -> None:
         help="Path to model config file",
     )
     parser.add_argument(
-        "--train_config",
+        "--train-config",
         type=str,
         default="config/training.yaml",
         help="Path to training config file",
     )
     parser.add_argument(
-        "--data_config",
+        "--data-config",
         type=str,
         default="config/data.yaml",
         help="Path to data config file",

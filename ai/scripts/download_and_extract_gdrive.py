@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""
-Download and (optionally) extract files from Google Drive links.
-
-Usage:
-    python download_and_extract_gdrive.py <gdrive_link1> [<gdrive_link2> ...]
-
-Example:
-    python download_and_extract_gdrive.py \
-        https://drive.google.com/file/d/15Z_F4Dwgb3NLqEGnVMUEJqyxXgW7Gx-h/view?usp=sharing \
-        https://drive.google.com/file/d/15g5wrEEIXcxmlekgFTnIwIlew3okBSsj/view?usp=sharing
-
-Requirements:
-    - gdown (install via pip or add to environment.yml)
-"""
 import argparse
 import logging
 import re

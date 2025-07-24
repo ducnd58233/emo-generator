@@ -120,7 +120,7 @@ def main() -> None:
         description="Register local checkpoint to MLflow Model Registry"
     )
     parser.add_argument(
-        "--checkpoint_path",
+        "--checkpoint-path",
         type=str,
         required=True,
         help="Path to model checkpoint (.pt file)",
@@ -132,13 +132,13 @@ def main() -> None:
         help="Path to model config YAML file",
     )
     parser.add_argument(
-        "--mlflow_tracking_uri",
+        "--mlflow-tracking-uri",
         type=str,
         default="http://localhost:5000",
         help="MLflow tracking server URI",
     )
     parser.add_argument(
-        "--model_name",
+        "--model-name",
         type=str,
         required=True,
         help="Name for MLflow registered model",

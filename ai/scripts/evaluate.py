@@ -126,35 +126,35 @@ def generate_sample_images(generator, config, output_dir="outputs"):
 def main():
     parser = argparse.ArgumentParser(description="Evaluate Stable Diffusion Model")
     parser.add_argument(
-        "--model_path", type=str, required=True, help="Path to model checkpoint"
+        "--model-path", type=str, required=True, help="Path to model checkpoint"
     )
     parser.add_argument(
         "--config", type=str, default="config/model.yaml", help="Path to model config"
     )
     parser.add_argument(
-        "--data_config",
+        "--data-config",
         type=str,
         default="config/data.yaml",
         help="Path to data config",
     )
     parser.add_argument(
-        "--training_config",
+        "--training-config",
         type=str,
         default="config/training.yaml",
         help="Path to training config",
     )
     parser.add_argument("--device", type=str, default="cuda", help="Device to use")
     parser.add_argument(
-        "--output_dir",
+        "--output-dir",
         type=str,
         default="outputs",
         help="Directory to save sample images",
     )
     parser.add_argument(
-        "--skip_samples", action="store_true", help="Skip sample image generation"
+        "--skip-samples", action="store_true", help="Skip sample image generation"
     )
     parser.add_argument(
-        "--skip_eval", action="store_true", help="Skip validation evaluation"
+        "--skip-eval", action="store_true", help="Skip validation evaluation"
     )
 
     args = parser.parse_args()

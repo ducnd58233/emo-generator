@@ -27,7 +27,7 @@ def main() -> None:
         description="Generate Emojis with Stable Diffusion"
     )
     parser.add_argument(
-        "--model_path", type=str, required=True, help="Path to trained model checkpoint"
+        "--model-path", type=str, required=True, help="Path to trained model checkpoint"
     )
     parser.add_argument(
         "--config",
@@ -42,19 +42,19 @@ def main() -> None:
         "--num_images", type=int, default=1, help="Number of images to generate"
     )
     parser.add_argument(
-        "--num_steps",
+        "--num-steps",
         type=int,
         default=DEFAULT_NUM_INFERENCE_STEPS,
         help="Number of inference steps",
     )
     parser.add_argument(
-        "--latent_height",
+        "--latent-height",
         type=int,
         default=DEFAULT_LATENT_HEIGHT,
         help="Height of latent space",
     )
     parser.add_argument(
-        "--latent_width",
+        "--latent-width",
         type=int,
         default=DEFAULT_LATENT_WIDTH,
         help="Width of latent space",
@@ -63,7 +63,7 @@ def main() -> None:
         "--seed", type=int, default=DEFAULT_SEED, help="Random seed for generation"
     )
     parser.add_argument(
-        "--output_dir",
+        "--output-dir",
         type=str,
         default="outputs",
         help="Output directory for generated images",
