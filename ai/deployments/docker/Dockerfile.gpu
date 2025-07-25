@@ -1,0 +1,56 @@
+FROM python:3.11 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=UTC \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN pip install --upgrade pip poetry==2.1.3
+
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_IN_PROJECT=1 \
+    POETRY_VIRTUALENVS_CREATE=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+
+RUN poetry install --without=dev --extras=cuda --no-root && \
+    rm -rf $POETRY_CACHE_DIR
+
+# ------------------------------------------------------------------------------------------------
+
+FROM nvidia/cuda:12.9.1-cudnn-runtime-ubuntu22.04 AS runtime
+
+RUN apt-get clean && apt-get update && apt-get install -y --no-install-recommends \
+    python3.11-pip \
+    python3.11-dev
+
+ENV VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
+
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+
+COPY . .
+
+RUN mkdir -p models/mlflow_registry/data outputs
+
+ENV EMO_GENERATOR_DEV_MODE=0 \
+    EMO_GENERATOR_MODEL_PATH=models/mlflow_registry/data/model.pth \
+    PYTHONPATH=/app \
+    CUDA_LAUNCH_BLOCKING=1
+
+EXPOSE 8501
+
+CMD if [ ! -f "$EMO_GENERATOR_MODEL_PATH" ] && [ -n "$HF_TOKEN" ]; then \
+        echo "Downloading model..." && \
+        python -m scripts.download_from_huggingface; \
+    fi && \
+    streamlit run scripts/streamlit_app.py \
+        --server.port=8501 \
+        --server.address=0.0.0.0 \
+        --server.headless=true \
+        --server.enableCORS=false \
+        --server.enableXsrfProtection=false

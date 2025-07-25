@@ -1,0 +1,33 @@
+version: "3.8"
+name: emo-generator-streamlit
+
+services:
+  streamlit-cpu:
+    image: emo-generator-streamlit-cpu
+    build:
+      context: ../../
+      dockerfile: deployments/docker/Dockerfile.cpu
+    ports:
+      - "8501:8501"
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+    restart: unless-stopped
+
+  streamlit-gpu:
+    image: emo-generator-streamlit-gpu
+    build:
+      context: ../../
+      dockerfile: deployments/docker/Dockerfile.gpu
+    ports:
+      - "8501:8501"
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - CUDA_LAUNCH_BLOCKING=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped

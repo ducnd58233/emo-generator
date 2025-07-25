@@ -22,6 +22,7 @@ A modern, modular, and extensible framework for generating custom emoji images f
 
 - [Features](#-features)
 - [Quickstart](#-quickstart)
+- [Directory Structure](#-directory-structure)
 - [Usage](#-usage)
   - [Training](#training)
   - [Inference](#inference)
@@ -31,7 +32,6 @@ A modern, modular, and extensible framework for generating custom emoji images f
   - [Model Management](#model-management)
   - [Hugging Face Model Management](#hugging-face-model-management)
 - [Data Management](#-data-management)
-- [Directory Structure](#-directory-structure)
 - [Docker](#-docker)
 - [Troubleshooting & Tips](#-troubleshooting--tips)
 - [Contributing](#-contributing)
@@ -73,6 +73,26 @@ Copy the example environment file:
 
 ```bash
 cp .env.example .env
+```
+
+---
+
+## 🗂️ Directory Structure
+
+```text
+ai/
+  config/           # YAML configs for model, data, training
+  datasets/         # Downloaded datasets (images, metadata)
+  models/           # Saved checkpoints and MLflow registry
+    mlflow_registry/  # Downloaded MLflow models
+  scripts/          # Training, inference, evaluation, UI apps
+    streamlit_app.py  # Streamlit web interface with environment setup
+  src/              # Source code (data, models, utils, etc.)
+    ui/             # UI components and utilities
+  outputs/          # Generated images (created at runtime)
+  mlruns/           # MLflow experiment logs
+  environment.yml   # Conda environment
+  pyproject.toml    # Poetry project config
 ```
 
 ---
@@ -394,23 +414,96 @@ All files will be downloaded to `ai/datasets`. Zip archives are automatically ex
 
 ---
 
-## 🗂️ Directory Structure
+## Running the Streamlit UI with Docker (CPU & GPU)
 
-```text
-ai/
-  config/           # YAML configs for model, data, training
-  datasets/         # Downloaded datasets (images, metadata)
-  models/           # Saved checkpoints and MLflow registry
-    mlflow_registry/  # Downloaded MLflow models
-  scripts/          # Training, inference, evaluation, UI apps
-    streamlit_app.py  # Streamlit web interface with environment setup
-  src/              # Source code (data, models, utils, etc.)
-    ui/             # UI components and utilities
-  outputs/          # Generated images (created at runtime)
-  mlruns/           # MLflow experiment logs
-  environment.yml   # Conda environment
-  pyproject.toml    # Poetry project config
+### Prerequisites
+
+- Docker (and NVIDIA Container Toolkit for GPU)
+- Hugging Face access token (if required by the model)
+
+### Providing Environment Variables (e.g., HF_TOKEN)
+
+You can provide secrets like `HF_TOKEN` to Docker Compose in several ways:
+
+1. **Using a custom env file:**
+
+    - Run Compose with the `--env-file` flag:
+    
+    ```bash
+    docker compose -f deployments/docker/docker-compose.yml --env-file .env up streamlit-cpu -d
+    ```
+    
+    - For gpu
+    
+    ```bash
+    docker compose -f deployments/docker/docker-compose.yml --env-file .env up streamlit-gpu -d
+    ```
+
+2. **From your shell environment:**
+
+   - Export the variable in your shell before running Compose:
+
+   ```bash
+     export HF_TOKEN=your_hf_token_here
+     docker compose -f deployments/docker/docker-compose.yml up streamlit-cpu -d
+     # Or for gpu
+     docker compose -f deployments/docker/docker-compose.yml up streamlit-gpu -d
+   ```
+
+   - This will override the value in `.env` if both are set.
+
+3. **Inline with `-e` (for `docker run`):**
+   - When running a container directly:
+     ```bash
+     docker run --rm -p 8501:8501 -e HF_TOKEN=your_hf_token_here emo-streamlit-cpu
+     ```
+
+**Precedence:** Shell > `--env-file` > `.env` file > Compose defaults.
+
+For more, see the [Docker Compose env file docs](https://docs.docker.com/compose/environment-variables/env-file/).
+
+### 1. CPU-only (no GPU required)
+
+Build the image:
+
+```bash
+docker build -f deployments/docker/Dockerfile.cpu -t emo-streamlit-cpu .
 ```
+
+Run the container:
+
+```bash
+docker run --rm -p 8501:8501 -e HF_TOKEN=your_hf_token_here emo-streamlit-cpu
+```
+
+
+### 2. GPU (NVIDIA GPU required)
+
+Build the image:
+
+```bash
+docker build -f deployments/docker/Dockerfile.gpu -t emo-streamlit-gpu .
+```
+
+Run the container (with NVIDIA runtime):
+
+```bash
+docker run --rm --gpus all -p 8501:8501 -e HF_TOKEN=your_hf_token_here emo-streamlit-gpu
+```
+
+
+- The app will be available at http://localhost:8501
+- The model will be downloaded at build time and placed in the correct directory.
+- If you want to persist the model outside the container, mount a volume:
+
+  docker run --rm -p 8501:8501 -e HF_TOKEN=your_hf_token_here -v $(pwd)/models/mlflow_registry/data:/app/models/mlflow_registry/data emo-streamlit-cpu
+
+or (for GPU):
+
+    docker run --rm --gpus all -p 8501:8501 -e HF_TOKEN=your_hf_token_here -v $(pwd)/models/mlflow_registry/data:/app/models/mlflow_registry/data emo-streamlit-gpu
+
+- If your model is public, you can omit HF_TOKEN.
+- For more advanced options, see the Dockerfiles in deployments/docker.
 
 ---
 

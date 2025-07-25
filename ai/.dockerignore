@@ -1,0 +1,110 @@
+datasets/
+models/
+outputs/
+mlruns/
+.git/
+node_modules/
+
+# Specific large model directories
+models/mlflow_registry/
+models/checkpoints/
+models/pretrained/
+
+# MLflow and experiment data
+mlruns/
+mlflow_artifacts/
+artifacts/
+experiments/
+
+# Dataset directories (often multi-GB)
+datasets/
+data/
+dataset/
+raw_data/
+
+# Generated outputs
+outputs/
+generated/
+results/
+inference_results/
+
+# Cache directories
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.cache/
+.venv/
+venv/
+env/
+
+# Development files
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Git and version control
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Documentation (not needed in container)
+README.md
+*.md
+docs/
+documentation/
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# Logs
+*.log
+logs/
+log/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Docker files (prevent recursion)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# IDE files
+*.sublime-*
+*.code-workspace
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+temp/
